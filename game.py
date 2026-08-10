@@ -11,7 +11,7 @@ import pygame
 from audio.midi_tools import build_forest_theme
 from audio.sound_tools import synthesize_bump, synthesize_engine_rumble, synthesize_footstep
 from constants import FPS, SCREEN_HEIGHT, SCREEN_WIDTH
-from explore_scene import ExploreScene
+from main_menu import build_main_menu
 from scene import SceneManager
 
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
@@ -66,7 +66,7 @@ def main():
     play_soundtrack()
     footstep_sound, bump_sound, engine_sound = load_sfx()
 
-    manager = SceneManager(ExploreScene(footstep_sound, bump_sound, engine_sound))
+    manager = SceneManager(build_main_menu(footstep_sound, bump_sound, engine_sound))
 
     running = True
     while running:
