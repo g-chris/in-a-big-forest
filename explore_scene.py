@@ -15,14 +15,17 @@ from inventory import Inventory, Item
 from item_db import get_item
 from lake_shape import draw_lake
 from map import World
+from motocross.scene import MotocrossScene
 from player import Player
 from scene import Scene
+from track_icon import draw_track_decoration
 
 BUMP_COOLDOWN = 2.0  # seconds; keeps a wedged player from spamming the sound
 NOTICE_DURATION = 4.0  # seconds a post-minigame result banner stays up
 BOWLING_WIN_SCORE = 185  # score needed to win Machine Part #25
 MOTORCYCLE_WIN_KG = 50   # total catch weight needed to win the motorcycle
 HELMET_WIN_KG = 100      # total catch weight needed to win the helmet
+MOTOCROSS_WIN_TIME = 35.5  # seconds; beat this to win the Hammer
 
 EQUIP_TOGGLE_MESSAGES = {
     "vehicle": ("You hop on the motorcycle. Vroom!", "You put the motorcycle away."),
@@ -59,6 +62,8 @@ class ExploreScene(Scene):
         self.won_motorcycle = False  # 1957 Vincent Black Shadow, also one-time
         self.won_helmet = False      # Motorcycle Helmet, also one-time
         self.fishing_high_score = None  # best total kg across visits
+        self.won_hammer = False      # Hammer, also one-time
+        self.motocross_best_time = None  # best race time across visits (lower is better)
 
         self.hint_font = pygame.font.SysFont(None, 22)
         self.message_font = pygame.font.SysFont(None, 24)
@@ -127,6 +132,8 @@ class ExploreScene(Scene):
                     self._open_shack_dialogue(manager)
                 elif building.kind == "fishing":
                     self._open_fishing_dialogue(manager)
+                elif building.kind == "motocross":
+                    self._open_motocross_dialogue(manager)
                 return
 
     # -- bowling shack flow ---------------------------------------------------
@@ -220,6 +227,56 @@ class ExploreScene(Scene):
         else:
             self.show_notice(f"Caught {total_kg}kg. High score: {self.fishing_high_score}kg.")
 
+    # -- motocross flow ---------------------------------------------------------
+
+    def _open_motocross_dialogue(self, manager):
+        if not (self.player.riding and self.player.wearing_helmet):
+            manager.push(DialogueScene(
+                speaker="Race Official",
+                line="You here to race? You'll need a bike and a helmet equipped first.",
+                choices=["OK"],
+                on_choice=lambda m, choice: m.pop(),
+                wearing_helmet=self.player.wearing_helmet,
+            ))
+            return
+
+        if self.won_hammer:
+            line = f"Back to beat your best time of {self.motocross_best_time:.1f}s?"
+        else:
+            line = ("You here to race? You need a bike and a helmet. Beat the course "
+                    f"record of {MOTOCROSS_WIN_TIME}s and win a hammer.")
+        manager.push(DialogueScene(
+            speaker="Race Official",
+            line=line,
+            choices=["Yes", "No"],
+            on_choice=self._on_motocross_choice,
+            wearing_helmet=self.player.wearing_helmet,
+        ))
+
+    def _on_motocross_choice(self, manager, choice):
+        manager.pop()  # back to exploring either way
+        if choice == "Yes":
+            manager.push(MotocrossScene(on_finish=self._on_motocross_finish))
+
+    def _on_motocross_finish(self, manager, race):
+        manager.pop()  # back to exploring
+        race_time = race.race_time
+        is_new_best = self.motocross_best_time is None or race_time < self.motocross_best_time
+        if is_new_best:
+            self.motocross_best_time = race_time
+
+        if not self.won_hammer and race_time <= MOTOCROSS_WIN_TIME:
+            record = get_item("Hammer")
+            self.inventory.add_item(Item(record.name, record.color))
+            self.won_hammer = True
+            self.show_notice(f"Time: {race_time:.1f}s - you win! Got the Hammer.")
+        elif self.won_hammer and is_new_best:
+            self.show_notice(f"Time: {race_time:.1f}s - new best!")
+        elif self.won_hammer:
+            self.show_notice(f"Time: {race_time:.1f}s. Best: {self.motocross_best_time:.1f}s.")
+        else:
+            self.show_notice(f"Time: {race_time:.1f}s. Try again sometime.")
+
     # -- update/draw ----------------------------------------------------------
 
     def update(self, dt, keys, manager):
@@ -235,6 +292,8 @@ class ExploreScene(Scene):
         obstacles = self.world.tile.trees + self.world.tile.buildings
         if self.world.tile.lake is not None:
             obstacles = obstacles + [self.world.tile.lake]
+        if self.world.tile.track is not None:
+            obstacles = obstacles + [self.world.tile.track]
         self.player.update(dt, keys, obstacles)
         self.world.handle_transition(self.player)
 
@@ -251,6 +310,8 @@ class ExploreScene(Scene):
 
         if self.world.tile.lake is not None:
             draw_lake(surface, self.world.tile.lake.rect)
+        if self.world.tile.track is not None:
+            draw_track_decoration(surface, self.world.tile.track.rect, pygame.time.get_ticks() / 1000.0)
         for tree in self.world.tile.trees:
             tree.draw(surface)
         for building in self.world.tile.buildings:

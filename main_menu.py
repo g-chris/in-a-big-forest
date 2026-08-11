@@ -12,6 +12,7 @@ from bowling.scene import BowlingScene
 from explore_scene import ExploreScene
 from fishing.scene import FishingScene
 from menu import ListMenu
+from motocross.scene import MotocrossScene
 
 COMING_SOON = "Coming soon!"
 
@@ -83,7 +84,19 @@ def _on_fishing_test_finish(manager, result):
     manager.current.show_notice(f"Caught {result.total_kg()}kg")
 
 
+# -- motocross: single-player only, launches straight in, no gear gate --
+
+def _launch_motocross(manager):
+    manager.push(MotocrossScene(on_finish=_on_motocross_test_finish))
+
+
+def _on_motocross_test_finish(manager, race):
+    manager.pop()  # back to the minigames menu
+    manager.current.show_notice(f"Time: {race.race_time:.1f}s")
+
+
 MINIGAME_LAUNCHERS = [
     ("Bowling", _launch_bowling),
     ("Fishing", _launch_fishing),
+    ("MotoCross", _launch_motocross),
 ]

@@ -12,9 +12,11 @@ from building import Building
 from fish_icon import draw_fish
 from inventory import Item, WorldItem
 from item_db import get_item
+from motorcycle_icon import draw_motorcycle
 from tree import generate_trees
 
 FISH_SIGN_COLOR = (210, 200, 70)
+MOTO_SIGN_COLOR = (200, 40, 40)
 
 # tiles not listed here are blank placeholders (walkable, no trees) until
 # their content is designed
@@ -22,6 +24,7 @@ TILE_FORESTS = {
     (2, 2): {"seed": 7, "count": 18},  # the original forest
     (2, 3): {"seed": 3, "count": 7},  # Test
     (2, 4): {"seed": 11, "count": 10},  # a few trees for a woodsy lake feel
+    (4, 2): {"seed": 17, "count": 12},  # woodsy trees around the moto track
 }
 
 # tiles not listed here have no items. Coordinates are exact, hand-placed
@@ -33,6 +36,14 @@ TILE_ITEMS = {
 
 def _fish_sign_icon(surface, center, height):
     draw_fish(surface, center[0], center[1], height * 2.2, FISH_SIGN_COLOR)
+
+
+def _moto_sign_icon(surface, center, height):
+    # draw_motorcycle's ground point is its base, not its center, so nudge
+    # the base down by half the icon's height to vertically center it in
+    # the sign box the same way the pin/fish icons already sit
+    icon_height = height * 0.9
+    draw_motorcycle(surface, center[0], center[1] + icon_height * 0.5, icon_height, MOTO_SIGN_COLOR)
 
 
 # tiles not listed here have no buildings. Construction parameters, not live
@@ -60,6 +71,17 @@ TILE_BUILDINGS = {
             "sign_icon": _fish_sign_icon,
         },
     ],
+    (4, 2): [
+        {
+            "x": 450, "y": 420,
+            "width": 260,
+            "height": 50,   # the height of the player character
+            "color": (95, 70, 50),
+            "sign_text": "1997 MotoX",
+            "kind": "motocross",
+            "sign_icon": _moto_sign_icon,
+        },
+    ],
 }
 
 # tiles not listed here have no lake. Same "construction parameters, built
@@ -68,6 +90,18 @@ TILE_BUILDINGS = {
 TILE_LAKES = {
     (2, 4): {"x": 450, "y": 210, "width": 380, "height": 170},
 }
+
+# tiles not listed here have no moto track. Same "construction parameters,
+# built lazily" reasoning as lakes/buildings above.
+TILE_MOTOCROSS_TRACKS = {
+    (4, 2): {"x": 450, "y": 200, "width": 360, "height": 150},
+}
+
+
+def _inside_ellipse(px, py, cx, cy, rx, ry):
+    """Shared by Lake and MotocrossTrack: is (px, py) inside the ellipse
+    centered at (cx, cy) with radii (rx, ry)?"""
+    return ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 <= 1
 
 
 class Lake:
@@ -81,16 +115,28 @@ class Lake:
         if py < self.rect.top - radius:
             return False
         cx, cy = self.rect.centerx, self.rect.top
-        rx, ry = self.rect.width / 2 + radius, self.rect.height + radius
-        return ((px - cx) / rx) ** 2 + ((py - cy) / ry) ** 2 <= 1
+        return _inside_ellipse(px, py, cx, cy, self.rect.width / 2 + radius, self.rect.height + radius)
+
+
+class MotocrossTrack:
+    def __init__(self, x, y, width, height):
+        self.rect = pygame.Rect(x - width / 2, y - height / 2, width, height)
+
+    def blocks(self, px, py, radius):
+        """Same polymorphic obstacle interface as Tree/Building/Lake.blocks()
+        — a full oval this time (not bisected like the lake's bowl), since
+        the track decoration reads as a complete loop from above."""
+        cx, cy = self.rect.center
+        return _inside_ellipse(px, py, cx, cy, self.rect.width / 2 + radius, self.rect.height / 2 + radius)
 
 
 class Tile:
-    def __init__(self, trees, items, buildings, lake):
+    def __init__(self, trees, items, buildings, lake, track):
         self.trees = trees
         self.items = items
         self.buildings = buildings
         self.lake = lake
+        self.track = track
 
 
 def _clear_of(rects, margin=20):
@@ -126,12 +172,15 @@ def generate_tile(tx, ty, collected_items):
     lake_cfg = TILE_LAKES.get((tx, ty))
     lake = Lake(**lake_cfg) if lake_cfg else None
 
-    if trees and (lake or buildings):
-        # a tile with both a forest and a lake/building wasn't hand-checked
-        # for overlap when the forest seed was picked, so just drop any
-        # tree that landed on top of one — may end up with fewer trees than
-        # `count`, which is fine for a decorative forest
-        obstacle_rects = ([lake.rect] if lake else []) + [b.rect for b in buildings]
+    track_cfg = TILE_MOTOCROSS_TRACKS.get((tx, ty))
+    track = MotocrossTrack(**track_cfg) if track_cfg else None
+
+    if trees and (lake or buildings or track):
+        # a tile with both a forest and a lake/building/track wasn't
+        # hand-checked for overlap when the forest seed was picked, so just
+        # drop any tree that landed on top of one — may end up with fewer
+        # trees than `count`, which is fine for a decorative forest
+        obstacle_rects = ([lake.rect] if lake else []) + ([track.rect] if track else []) + [b.rect for b in buildings]
         trees = list(filter(_clear_of(obstacle_rects), trees))
 
-    return Tile(trees, items, buildings, lake)
+    return Tile(trees, items, buildings, lake, track)

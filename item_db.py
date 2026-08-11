@@ -55,6 +55,13 @@ ITEM_TABLE = [
         use_description="",
         equip_slot="head",
     ),
+    ItemRecord(
+        name="Hammer",
+        tag="Key Item",
+        color=(120, 120, 125),
+        cant_use_description="Nothing around here needs hammering. Yet.",
+        use_description="You give it a few test swings.",
+    ),
 ]
 
 _BY_NAME = {row.name: row for row in ITEM_TABLE}
