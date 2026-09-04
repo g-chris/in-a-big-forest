@@ -62,7 +62,7 @@ def build_bowling_player_count_menu():
         count = index + 1
         manager.pop()  # drop the player-count menu
         player_names = [f"Player {i + 1}" for i in range(count)]
-        manager.push(BowlingScene(player_names, bumpers=True, on_finish=_on_bowling_test_finish))
+        manager.push(BowlingScene(player_names, on_finish=_on_bowling_test_finish))
 
     return ListMenu(title="Bowling", subtitle="How many players?", options=options, on_select=on_select)
 

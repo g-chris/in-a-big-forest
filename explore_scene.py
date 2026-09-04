@@ -22,7 +22,7 @@ from track_icon import draw_track_decoration
 
 BUMP_COOLDOWN = 2.0  # seconds; keeps a wedged player from spamming the sound
 NOTICE_DURATION = 4.0  # seconds a post-minigame result banner stays up
-BOWLING_WIN_SCORE = 185  # score needed to win Machine Part #25
+BOWLING_WIN_SCORE = 155  # score needed to win Machine Part #25
 MOTORCYCLE_WIN_KG = 50   # total catch weight needed to win the motorcycle
 HELMET_WIN_KG = 100      # total catch weight needed to win the helmet
 MOTOCROSS_WIN_TIME = 35.5  # seconds; beat this to win the Hammer
@@ -154,7 +154,7 @@ class ExploreScene(Scene):
     def _on_shack_choice(self, manager, choice):
         manager.pop()  # back to exploring either way
         if choice == "Yes":
-            manager.push(BowlingScene(["Player 1"], bumpers=True, on_finish=self._on_bowling_finish))
+            manager.push(BowlingScene(["Player 1"], on_finish=self._on_bowling_finish))
 
     def _on_bowling_finish(self, manager, match):
         manager.pop()  # back to exploring

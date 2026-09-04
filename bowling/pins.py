@@ -1,8 +1,8 @@
 """bowling/pins.py — individual pin bodies for the lane rack.
 
-Still "simple physics" — no rigid-body simulation. `bowling.lane.resolve_roll`
+Still "simple physics" — no rigid-body simulation. `bowling.lane.resolve_bar_roll`
 stays the sole authority on *how many* pins a roll knocks down (that's what
-keeps the strike-timing-window mechanic meaningful); this module only picks
+keeps the moving-zone timing mechanic meaningful); this module only picks
 *which* standing pins fall — the ones closest to the ball's line — and gives
 knockdowns and near-miss neighbors a small, physical-feeling reaction: a
 pin that's hit topples over a short animation instead of vanishing, and any
@@ -13,6 +13,7 @@ contact reads without a full collision solve.
 import math
 
 PIN_HEIGHT = 22
+PIN_SPACING = 22
 FALL_DURATION = 0.45
 NUDGE_RADIUS = 26
 NUDGE_DURATION = 0.2
@@ -56,7 +57,7 @@ class Pin:
         return (x, y), 1.0
 
 
-def build_rack(center_x, base_y, row_spacing=22, pin_spacing=22):
+def build_rack(center_x, base_y, row_spacing=22, pin_spacing=PIN_SPACING):
     """A standard 4-row (1-2-3-4) triangle, headpin first — the order
     knockdown-selection walks front-to-back when picking which pins fall."""
     positions = []

@@ -70,10 +70,9 @@ class PlayerState:
 
 
 class BowlingMatch:
-    def __init__(self, player_names, bumpers=True):
+    def __init__(self, player_names):
         assert 1 <= len(player_names) <= MAX_PLAYERS
         self.players = [PlayerState(name) for name in player_names]
-        self.bumpers = bumpers
         self.current_index = 0
 
     @property

@@ -1,18 +1,22 @@
 """bowling/scene.py — the bowling mini-game screen. Wires bowling.match
 (turn/frame state) and bowling.lane (roll physics) into a small pygame
-Scene: aim, a timed power gauge, ball/pin rendering, and a live scoreboard.
+Scene: aim (now gates alignment, not accuracy), a timed power gauge against
+a moving green/gold zone, ball/pin rendering, and a live scoreboard.
 """
+
+import random
 
 import pygame
 
-from constants import SCREEN_WIDTH
+from constants import SCREEN_HEIGHT, SCREEN_WIDTH
 from pin_icon import draw_pin_icon
 from scene import Scene
 from stick_figure import draw_stick_figure
 
-from .lane import STRIKE_WINDOW, power_meter_value, resolve_roll
+from .lane import (GOLD_WIDTH, GREEN_WIDTH, GUTTER_NOT_ALIGNED, HIT_GOLD, HIT_GREEN,
+                    power_meter_value, resolve_bar_roll, zone_center, zone_speed)
 from .match import BowlingMatch
-from .pins import PIN_HEIGHT, apply_hit, build_rack
+from .pins import PIN_HEIGHT, PIN_SPACING, apply_hit, build_rack
 from .scoring import frame_breakdown
 
 LANE_LEFT = 300
@@ -20,6 +24,9 @@ LANE_RIGHT = 600
 LANE_TOP = 120      # pins rack near here
 LANE_BOTTOM = 520   # player stands near here
 RACK_Y = LANE_TOP + 80  # gives the larger, wider-spaced pins headroom below LANE_TOP
+
+PINS_AREA_HALF_WIDTH = 1.5 * PIN_SPACING  # matches the widest (4-pin) row's span,
+                                           # regardless of how many pins are actually left
 
 AIM_SPEED = 1.2       # aim units (-1..1) per second while adjusting
 ROLL_DURATION = 0.75  # seconds for the ball's travel animation
@@ -30,6 +37,12 @@ BALL_RADIUS_FAR = 5    # near the pins (perspective shrink as it recedes)
 
 BAR_X, BAR_Y, BAR_W, BAR_H = 250, 550, 400, 22
 BAR_FLASH_DURATION = 0.35  # seconds the bar flashes after a release
+GREEN_HALF_WIDTH = GREEN_WIDTH / 2
+GOLD_HALF_WIDTH = GOLD_WIDTH / 2
+
+CONFETTI_COUNT = 40
+CONFETTI_LIFETIME = 1.5
+CONFETTI_GRAVITY = 400  # px/s^2
 
 BG_COLOR = (10, 40, 15)
 LANE_COLOR = (180, 140, 90)
@@ -44,17 +57,25 @@ BAR_WINDOW_COLOR = (0, 190, 90)
 BAR_MARKER_COLOR = (255, 255, 255)
 BAR_FLASH_HIT_COLOR = (30, 255, 100)
 BAR_FLASH_MISS_COLOR = (230, 40, 40)
+BAR_FLASH_GOLD_COLOR = (255, 215, 0)
+PINS_AREA_GUIDE_COLOR = (140, 190, 140)
+CONFETTI_COLORS = [(230, 50, 50), (250, 200, 40), (60, 160, 230), (60, 200, 90), (200, 90, 220)]
 
 
 class BowlingScene(Scene):
-    def __init__(self, player_names, bumpers=True, on_finish=None):
-        self.match = BowlingMatch(player_names, bumpers=bumpers)
+    def __init__(self, player_names, on_finish=None):
+        self.match = BowlingMatch(player_names)
         self.on_finish = on_finish
 
         self.state = "aiming"  # "aiming" | "charging" | "rolling" | "result"
         self.aim_offset = 0.0
+        self.aligned = True  # was the player standing over the pins area at release?
         self.charge_elapsed = 0.0
+        self.zone_clock = 0.0  # ticks every frame regardless of state — the
+        # zone's own independent clock, so its phase when a charge starts
+        # isn't the same throw-to-throw (unlike charge_elapsed, which resets)
         self.pending_pins = 0
+        self.pending_outcome = None
         self.roll_progress = 0.0
         self.last_message = ""
         self.rack = build_rack((LANE_LEFT + LANE_RIGHT) / 2, RACK_Y)
@@ -64,6 +85,7 @@ class BowlingScene(Scene):
 
         self.bar_flash_color = None
         self.bar_flash_timer = 0.0
+        self.confetti = []
 
         self._font = None
         self._small_font = None
@@ -77,19 +99,35 @@ class BowlingScene(Scene):
         if self.state == "aiming":
             self.state = "charging"
             self.charge_elapsed = 0.0
+            rack_center = (LANE_LEFT + LANE_RIGHT) / 2
+            self.aligned = abs(self._lane_x(self.aim_offset) - rack_center) <= PINS_AREA_HALF_WIDTH
         elif self.state == "charging":
             power = power_meter_value(self.charge_elapsed)
-            self.pending_pins = resolve_roll(self.aim_offset, power, self.match.bumpers)
+            pins_standing = self.match.pins_standing()
+            speed = zone_speed(pins_standing)
+            zone = zone_center(self.zone_clock, speed, GREEN_HALF_WIDTH)
+            outcome, pins = resolve_bar_roll(power, zone, pins_standing, self.aligned,
+                                              GREEN_HALF_WIDTH, GOLD_HALF_WIDTH)
+            self.pending_pins = pins
+            self.pending_outcome = outcome
             self.state = "rolling"
             self.roll_progress = 0.0
 
-            hit_window = STRIKE_WINDOW[0] <= power <= STRIKE_WINDOW[1]
-            self.bar_flash_color = BAR_FLASH_HIT_COLOR if hit_window else BAR_FLASH_MISS_COLOR
+            if outcome == HIT_GOLD:
+                self.bar_flash_color = BAR_FLASH_GOLD_COLOR
+                self._spawn_confetti()
+            elif outcome == HIT_GREEN:
+                self.bar_flash_color = BAR_FLASH_HIT_COLOR
+            else:  # GUTTER_NOT_ALIGNED or GUTTER_MISS
+                self.bar_flash_color = BAR_FLASH_MISS_COLOR
             self.bar_flash_timer = BAR_FLASH_DURATION
         elif self.state == "result" and self.on_finish is not None:
             self.on_finish(manager, self.match)
 
     def update(self, dt, keys, manager):
+        self.zone_clock += dt
+        self._update_confetti(dt)
+
         for pin in self.rack:
             pin.update(dt)
 
@@ -118,10 +156,13 @@ class BowlingScene(Scene):
                 standing_before = sum(1 for p in self.rack if p.standing)
                 knocked_this_roll = min(self.pending_pins, standing_before)
 
-                impact_x = self._lane_x(self.aim_offset)
-                apply_hit(self.rack, impact_x, self.pending_pins)
+                rack_center = (LANE_LEFT + LANE_RIGHT) / 2
+                apply_hit(self.rack, rack_center, self.pending_pins)
                 self.match.record_roll(self.pending_pins)
-                self.last_message = _describe_roll(frame_rolls_before, knocked_this_roll)
+                if self.pending_outcome == GUTTER_NOT_ALIGNED:
+                    self.last_message = "Not lined up — Gutter!"
+                else:
+                    self.last_message = _describe_roll(frame_rolls_before, knocked_this_roll)
                 self.aim_offset = 0.0
 
                 if self.match.is_game_over:
@@ -130,6 +171,24 @@ class BowlingScene(Scene):
                     self.state = "aiming"
                     if self.match.pins_standing() == 10:
                         self._rack_pending_reset = True
+
+    def _update_confetti(self, dt):
+        for p in self.confetti:
+            p["vy"] += CONFETTI_GRAVITY * dt
+            p["x"] += p["vx"] * dt
+            p["y"] += p["vy"] * dt
+            p["age"] += dt
+        self.confetti = [p for p in self.confetti if p["age"] < CONFETTI_LIFETIME and p["y"] < SCREEN_HEIGHT + 20]
+
+    def _spawn_confetti(self):
+        self.confetti = [{
+            "x": random.uniform(0, SCREEN_WIDTH),
+            "y": random.uniform(-40, 0),
+            "vx": random.uniform(-40, 40),
+            "vy": random.uniform(80, 160),
+            "color": random.choice(CONFETTI_COLORS),
+            "age": 0.0,
+        } for _ in range(CONFETTI_COUNT)]
 
     # -- drawing ------------------------------------------------------------
 
@@ -145,6 +204,7 @@ class BowlingScene(Scene):
         self._draw_power_bar(surface)
         self._draw_scoreboard(surface)
         self._draw_message(surface)
+        self._draw_confetti(surface)
 
         if self.state == "result":
             self._draw_result(surface)
@@ -157,6 +217,10 @@ class BowlingScene(Scene):
     def _draw_lane(self, surface):
         pygame.draw.rect(surface, GUTTER_COLOR, (0, LANE_TOP, SCREEN_WIDTH, LANE_BOTTOM - LANE_TOP))
         pygame.draw.rect(surface, LANE_COLOR, (LANE_LEFT, LANE_TOP, LANE_RIGHT - LANE_LEFT, LANE_BOTTOM - LANE_TOP))
+
+        rack_center = (LANE_LEFT + LANE_RIGHT) / 2
+        guide_rect = pygame.Rect(rack_center - PINS_AREA_HALF_WIDTH, LANE_BOTTOM - 6, PINS_AREA_HALF_WIDTH * 2, 6)
+        pygame.draw.rect(surface, PINS_AREA_GUIDE_COLOR, guide_rect)
 
     def _draw_pins(self, surface):
         if self.state == "result":
@@ -190,9 +254,20 @@ class BowlingScene(Scene):
         bar_fill = self.bar_flash_color if self.bar_flash_timer > 0.0 else BAR_BG_COLOR
         pygame.draw.rect(surface, bar_fill, bar_rect)
 
-        window_x = BAR_X + STRIKE_WINDOW[0] * BAR_W
-        window_w = (STRIKE_WINDOW[1] - STRIKE_WINDOW[0]) * BAR_W
-        pygame.draw.rect(surface, BAR_WINDOW_COLOR, (window_x, BAR_Y, window_w, BAR_H))
+        if not self.match.is_game_over:
+            # once the game is over there's no "current frame" to derive a
+            # pins-standing count from, and the bar isn't live anymore anyway
+            speed = zone_speed(self.match.pins_standing())
+            zone = zone_center(self.zone_clock, speed, GREEN_HALF_WIDTH)
+
+            green_x = BAR_X + (zone - GREEN_HALF_WIDTH) * BAR_W
+            green_w = GREEN_WIDTH * BAR_W
+            pygame.draw.rect(surface, BAR_WINDOW_COLOR, (green_x, BAR_Y, green_w, BAR_H))
+
+            gold_x = BAR_X + (zone - GOLD_HALF_WIDTH) * BAR_W
+            gold_w = GOLD_WIDTH * BAR_W
+            pygame.draw.rect(surface, BAR_FLASH_GOLD_COLOR, (gold_x, BAR_Y, gold_w, BAR_H))
+
         pygame.draw.rect(surface, TEXT_COLOR, bar_rect, 2)
 
         if self.state == "charging":
@@ -204,6 +279,12 @@ class BowlingScene(Scene):
         if self.state in ("aiming", "charging"):
             label = self._small_font.render(hint, True, TEXT_COLOR)
             surface.blit(label, label.get_rect(midtop=(SCREEN_WIDTH // 2, BAR_Y + BAR_H + 6)))
+
+    def _draw_confetti(self, surface):
+        for p in self.confetti:
+            rect = pygame.Rect(0, 0, 5, 8)
+            rect.center = (p["x"], p["y"])
+            pygame.draw.rect(surface, p["color"], rect)
 
     def _draw_scoreboard(self, surface):
         y = 8
@@ -248,10 +329,18 @@ def _format_frame(rolls):
 def _describe_roll(frame_rolls_before, knocked_this_roll):
     """The on-screen message for a just-finished roll: "Strike!"/"Spare!"
     when earned, otherwise how many pins *this* throw knocked down (not the
-    frame's running total)."""
-    if knocked_this_roll == 10:
-        return "Strike!"
+    frame's running total).
+
+    A 10 only counts as a Strike if this roll faced a fresh, fully-standing
+    rack — i.e. it's the frame's first ball, or (in the 10th frame's bonus
+    rolls) the previous roll was itself a strike and reset the rack. A 10
+    reached any other way (e.g. a gutter ball followed by clearing all 10
+    remaining) is a Spare, even though every pin ends up down either way.
+    """
     previous_roll = frame_rolls_before[-1] if frame_rolls_before else None
-    if previous_roll is not None and previous_roll != 10 and previous_roll + knocked_this_roll == 10:
+    fresh_rack = previous_roll is None or previous_roll == 10
+    if fresh_rack and knocked_this_roll == 10:
+        return "Strike!"
+    if not fresh_rack and previous_roll + knocked_this_roll == 10:
         return "Spare!"
     return f"{knocked_this_roll} pin(s)!" if knocked_this_roll else "Gutter!"
