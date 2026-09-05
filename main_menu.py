@@ -8,6 +8,7 @@ game, hut/minigame access will instead be gated behind save data (see the
 planned Load Game slots); until then this menu is the fast path for testing.
 """
 
+from art_tools import PixelArtScene
 from bowling.scene import BowlingScene
 from explore_scene import ExploreScene
 from fishing.scene import FishingScene
@@ -23,6 +24,8 @@ def build_main_menu(footstep_sound, bump_sound, engine_sound):
             manager.replace(ExploreScene(footstep_sound, bump_sound, engine_sound))
         elif label == "Minigames":
             manager.push(build_minigames_menu())
+        elif label == "Options":
+            manager.push(build_options_menu())
         else:
             manager.current.show_notice(COMING_SOON)
 
@@ -31,6 +34,18 @@ def build_main_menu(footstep_sound, bump_sound, engine_sound):
         options=["New Game", "Load Game", "Minigames", "Options", "Credits"],
         on_select=on_select,
     )
+
+
+def build_options_menu():
+    options = ["Pixel Art Editor", "Back"]
+
+    def on_select(manager, index, label):
+        if label == "Back":
+            manager.pop()
+            return
+        manager.push(PixelArtScene())
+
+    return ListMenu(title="Options", options=options, on_select=on_select)
 
 
 def build_minigames_menu():

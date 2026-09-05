@@ -13,7 +13,7 @@ pattern.
 PIN_COUNT = 10
 
 ZONE_SPEED_MIN = 0.8   # bar-widths/sec at 10 pins standing (easiest: full rack)
-ZONE_SPEED_MAX = 2.1   # bar-widths/sec at 1 pin standing (hardest: spare pick)
+ZONE_SPEED_MAX = 1.8   # bar-widths/sec at 1 pin standing (hardest: spare pick)
 GREEN_WIDTH = 0.30      # fraction of the bar — "slightly bigger" than the old 0.05 window
 GOLD_WIDTH = 0.06       # fraction of the bar — inner guaranteed-clear zone
 MAX_GREEN_PINS = 9      # pins knocked just outside gold (gold itself = clear everything standing)
