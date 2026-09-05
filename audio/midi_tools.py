@@ -33,7 +33,9 @@ INSTRUMENTS = {
     "flute": 73,
     "pan_flute": 75,
     "ocarina": 79,
+    "lead_sawtooth": 81,
     "pad_warm": 89,
+    "synth_bass": 38,
 }
 
 _PITCH_CLASS = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -208,5 +210,29 @@ def build_forest_theme(path="soundtrack.mid"):
     return MidiFile(tempo=96).add_track(melody).add_track(pad).save(path)
 
 
+def build_space_theme(path="space_soundtrack.mid"):
+    """Compose a driving, minor-key space theme (synth lead over a pulsing
+    bass) for the Space Wars minigame, and save it."""
+    lead = Track(name="Lead", instrument=INSTRUMENTS["lead_sawtooth"])
+    phrase = [
+        ("A4", 0.5), ("C5", 0.5), ("E5", 0.5), ("A5", 0.5),
+        ("G5", 0.5), ("E5", 0.5), ("C5", 0.5), ("D5", 0.5),
+        ("A4", 0.5), ("C5", 0.5), ("E5", 0.5), ("G5", 0.5),
+        ("F5", 0.5), ("E5", 0.5), ("D5", 0.5), ("C5", 0.5),
+    ]
+    for pitch, duration in phrase:
+        lead.note(pitch, duration, velocity=100)
+    lead.repeat(2)
+
+    bass = Track(name="Bass", instrument=INSTRUMENTS["synth_bass"], channel=1, volume=85)
+    pulse_unit = [("A2", 0.25), ("A2", 0.25), ("E3", 0.25), ("A2", 0.25)]
+    for pitch, duration in pulse_unit * 8:  # 8 beats, matching one lead phrase
+        bass.note(pitch, duration, velocity=90)
+    bass.repeat(2)
+
+    return MidiFile(tempo=138).add_track(lead).add_track(bass).save(path)
+
+
 if __name__ == "__main__":
     print(f"Wrote {build_forest_theme()}")
+    print(f"Wrote {build_space_theme()}")

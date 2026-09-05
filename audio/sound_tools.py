@@ -77,8 +77,64 @@ def synthesize_engine_rumble(path, duration=0.08, frequency=70, volume=0.6, seed
     _write_wav(path, samples)
 
 
+def synthesize_laser_shot(path, duration=0.12, start_freq=1200, end_freq=300, volume=0.5, seed=4):
+    """The player's laser: a bright tone sweeping quickly downward in pitch
+    (a classic "pew"), fast decay."""
+    n_samples = int(SAMPLE_RATE * duration)
+    samples = []
+    phase = 0.0
+    for i in range(n_samples):
+        t = i / n_samples
+        freq = start_freq + (end_freq - start_freq) * t
+        phase += 2 * math.pi * freq / SAMPLE_RATE
+        tone = math.sin(phase)
+        sample = tone * _envelope(i, n_samples, curve=1.8) * volume
+        samples.append(int(sample * 32767))
+    _write_wav(path, samples)
+
+
+def synthesize_enemy_laser_shot(path, duration=0.14, start_freq=700, end_freq=150, volume=0.5, seed=5):
+    """The Swarm's laser: the same descending-sweep idea as the player's,
+    pitched lower with a touch of noise mixed in so it reads as a
+    different, more menacing weapon rather than just a recolor."""
+    rng = random.Random(seed)
+    n_samples = int(SAMPLE_RATE * duration)
+    samples = []
+    phase = 0.0
+    for i in range(n_samples):
+        t = i / n_samples
+        freq = start_freq + (end_freq - start_freq) * t
+        phase += 2 * math.pi * freq / SAMPLE_RATE
+        tone = math.sin(phase)
+        noise = rng.uniform(-1, 1) * 0.2
+        sample = (tone * 0.85 + noise) * _envelope(i, n_samples, curve=1.8) * volume
+        samples.append(int(sample * 32767))
+    _write_wav(path, samples)
+
+
+def synthesize_explosion(path, duration=0.35, volume=0.7, seed=6):
+    """A ship exploding: filtered noise whose low-pass tightens as it
+    decays (a bright crack at impact, a duller rumble as it fades) —
+    bigger and longer than the bump sound."""
+    rng = random.Random(seed)
+    n_samples = int(SAMPLE_RATE * duration)
+    samples = []
+    filtered = 0.0
+    for i in range(n_samples):
+        t = i / n_samples
+        alpha = 0.6 - 0.4 * t  # starts brighter, gets duller as the low-pass tightens
+        raw = rng.uniform(-1, 1)
+        filtered = alpha * raw + (1 - alpha) * filtered
+        sample = filtered * _envelope(i, n_samples, curve=2.0) * volume
+        samples.append(int(sample * 32767))
+    _write_wav(path, samples)
+
+
 if __name__ == "__main__":
     synthesize_footstep("footstep.wav")
     synthesize_bump("bump.wav")
     synthesize_engine_rumble("engine.wav")
-    print("Wrote footstep.wav, bump.wav, and engine.wav")
+    synthesize_laser_shot("laser.wav")
+    synthesize_enemy_laser_shot("enemy_laser.wav")
+    synthesize_explosion("explosion.wav")
+    print("Wrote footstep.wav, bump.wav, engine.wav, laser.wav, enemy_laser.wav, and explosion.wav")

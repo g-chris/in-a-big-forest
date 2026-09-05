@@ -13,6 +13,7 @@ from fish_icon import draw_fish
 from inventory import Item, WorldItem
 from item_db import get_item
 from motorcycle_icon import draw_motorcycle
+from spaceport_icon import draw_launchpad, draw_spaceport_body, spaceport_sign_icon
 from tree import generate_trees
 
 FISH_SIGN_COLOR = (210, 200, 70)
@@ -25,6 +26,7 @@ TILE_FORESTS = {
     (2, 3): {"seed": 3, "count": 7},  # Test
     (2, 4): {"seed": 11, "count": 10},  # a few trees for a woodsy lake feel
     (4, 2): {"seed": 17, "count": 12},  # woodsy trees around the moto track
+    (0, 3): {"seed": 23, "count": 8},  # a clearing around the spaceport
 }
 
 # tiles not listed here have no items. Coordinates are exact, hand-placed
@@ -82,6 +84,18 @@ TILE_BUILDINGS = {
             "sign_icon": _moto_sign_icon,
         },
     ],
+    (0, 3): [
+        {
+            "x": 450, "y": 480,
+            "width": 200,
+            "height": 90,   # "large" — taller than the other huts
+            "color": (150, 150, 150),
+            "sign_text": "SPACEPORT",
+            "kind": "spaceport",
+            "sign_icon": spaceport_sign_icon,
+            "body_draw": draw_spaceport_body,
+        },
+    ],
 }
 
 # tiles not listed here have no lake. Same "construction parameters, built
@@ -95,6 +109,12 @@ TILE_LAKES = {
 # built lazily" reasoning as lakes/buildings above.
 TILE_MOTOCROSS_TRACKS = {
     (4, 2): {"x": 450, "y": 200, "width": 360, "height": 150},
+}
+
+# tiles not listed here have no launchpad. Same "construction parameters,
+# built lazily" reasoning as lakes/buildings above.
+TILE_LAUNCHPADS = {
+    (0, 3): {"x": 450, "y": 150, "width": 360, "height": 260},
 }
 
 
@@ -130,13 +150,27 @@ class MotocrossTrack:
         return _inside_ellipse(px, py, cx, cy, self.rect.width / 2 + radius, self.rect.height / 2 + radius)
 
 
+class Launchpad:
+    def __init__(self, x, y, width, height):
+        self.rect = pygame.Rect(x - width / 2, y - height / 2, width, height)
+
+    def blocks(self, px, py, radius):
+        """Same polymorphic obstacle interface as Tree/Building/Lake/
+        MotocrossTrack.blocks() — a plain rectangle, same reasoning
+        Building uses (the launchpad's silhouette is close enough to its
+        bounding box that a fitted shape isn't worth it, unlike Lake/
+        MotocrossTrack's much more distinctly non-rectangular shapes)."""
+        return self.rect.inflate(radius * 2, radius * 2).collidepoint(px, py)
+
+
 class Tile:
-    def __init__(self, trees, items, buildings, lake, track):
+    def __init__(self, trees, items, buildings, lake, track, launchpad):
         self.trees = trees
         self.items = items
         self.buildings = buildings
         self.lake = lake
         self.track = track
+        self.launchpad = launchpad
 
 
 def _clear_of(rects, margin=20):
@@ -175,12 +209,16 @@ def generate_tile(tx, ty, collected_items):
     track_cfg = TILE_MOTOCROSS_TRACKS.get((tx, ty))
     track = MotocrossTrack(**track_cfg) if track_cfg else None
 
-    if trees and (lake or buildings or track):
-        # a tile with both a forest and a lake/building/track wasn't
-        # hand-checked for overlap when the forest seed was picked, so just
-        # drop any tree that landed on top of one — may end up with fewer
-        # trees than `count`, which is fine for a decorative forest
-        obstacle_rects = ([lake.rect] if lake else []) + ([track.rect] if track else []) + [b.rect for b in buildings]
+    launchpad_cfg = TILE_LAUNCHPADS.get((tx, ty))
+    launchpad = Launchpad(**launchpad_cfg) if launchpad_cfg else None
+
+    if trees and (lake or buildings or track or launchpad):
+        # a tile with both a forest and a lake/building/track/launchpad
+        # wasn't hand-checked for overlap when the forest seed was picked,
+        # so just drop any tree that landed on top of one — may end up
+        # with fewer trees than `count`, which is fine for a decorative forest
+        obstacle_rects = (([lake.rect] if lake else []) + ([track.rect] if track else [])
+                          + ([launchpad.rect] if launchpad else []) + [b.rect for b in buildings])
         trees = list(filter(_clear_of(obstacle_rects), trees))
 
-    return Tile(trees, items, buildings, lake, track)
+    return Tile(trees, items, buildings, lake, track, launchpad)

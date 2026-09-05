@@ -14,6 +14,7 @@ from explore_scene import ExploreScene
 from fishing.scene import FishingScene
 from menu import ListMenu
 from motocross.scene import MotocrossScene
+from space_wars.scene import SpaceWarsScene
 
 COMING_SOON = "Coming soon!"
 
@@ -23,7 +24,7 @@ def build_main_menu(footstep_sound, bump_sound, engine_sound):
         if label == "New Game":
             manager.replace(ExploreScene(footstep_sound, bump_sound, engine_sound))
         elif label == "Minigames":
-            manager.push(build_minigames_menu())
+            manager.push(build_minigames_menu(footstep_sound, bump_sound, engine_sound))
         elif label == "Options":
             manager.push(build_options_menu())
         else:
@@ -48,9 +49,13 @@ def build_options_menu():
     return ListMenu(title="Options", options=options, on_select=on_select)
 
 
-def build_minigames_menu():
-    options = [name for name, _launcher in MINIGAME_LAUNCHERS] + ["Back"]
-    launchers = dict(MINIGAME_LAUNCHERS)
+def build_minigames_menu(footstep_sound, bump_sound, engine_sound):
+    def _launch_full_game(manager):
+        manager.replace(ExploreScene(footstep_sound, bump_sound, engine_sound))
+
+    entries = [("Full Game (from the start)", _launch_full_game)] + MINIGAME_LAUNCHERS
+    options = [name for name, _launcher in entries] + ["Back"]
+    launchers = dict(entries)
 
     def on_select(manager, index, label):
         if label == "Back":
@@ -110,8 +115,30 @@ def _on_motocross_test_finish(manager, race):
     manager.current.show_notice(f"Time: {race.race_time:.1f}s")
 
 
+# -- space wars: single-player only, launches straight in --
+
+def _launch_space_wars(manager):
+    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish))
+
+
+def _launch_space_wars_stage_2(manager):
+    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="1-2"))
+
+
+def _launch_space_wars_stage_3(manager):
+    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="1-3"))
+
+
+def _on_space_wars_test_finish(manager, scene):
+    manager.pop()  # back to the minigames menu
+    manager.current.show_notice(f"Stage {scene.stage} clear!" if scene.state == "won" else "Game Over")
+
+
 MINIGAME_LAUNCHERS = [
     ("Bowling", _launch_bowling),
     ("Fishing", _launch_fishing),
     ("MotoCross", _launch_motocross),
+    ("Space Wars", _launch_space_wars),
+    ("Space Wars (Stage 1-2)", _launch_space_wars_stage_2),
+    ("Space Wars (Stage 1-3)", _launch_space_wars_stage_3),
 ]

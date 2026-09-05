@@ -18,6 +18,8 @@ from map import World
 from motocross.scene import MotocrossScene
 from player import Player
 from scene import Scene
+from space_wars.scene import SpaceWarsScene
+from spaceport_icon import draw_launchpad
 from track_icon import draw_track_decoration
 
 BUMP_COOLDOWN = 2.0  # seconds; keeps a wedged player from spamming the sound
@@ -134,6 +136,8 @@ class ExploreScene(Scene):
                     self._open_fishing_dialogue(manager)
                 elif building.kind == "motocross":
                     self._open_motocross_dialogue(manager)
+                elif building.kind == "spaceport":
+                    self._open_spaceport_dialogue(manager)
                 return
 
     # -- bowling shack flow ---------------------------------------------------
@@ -277,6 +281,40 @@ class ExploreScene(Scene):
         else:
             self.show_notice(f"Time: {race_time:.1f}s. Try again sometime.")
 
+    # -- spaceport flow ---------------------------------------------------------
+
+    def _open_spaceport_dialogue(self, manager):
+        # gated on Machine Part #25, per spec
+        if not self.won_machine_part:
+            manager.push(DialogueScene(
+                speaker="Spaceport",
+                line="The Spaceport sits dark and silent. It needs Machine Part #25 to power on.",
+                choices=["OK"],
+                on_choice=lambda m, choice: m.pop(),
+                wearing_helmet=self.player.wearing_helmet,
+            ))
+            return
+
+        manager.push(DialogueScene(
+            speaker="Spaceport",
+            line="The Spaceport hums with power! Ready to defend the skies?",
+            choices=["Yes", "No"],
+            on_choice=self._on_spaceport_choice,
+            wearing_helmet=self.player.wearing_helmet,
+        ))
+
+    def _on_spaceport_choice(self, manager, choice):
+        manager.pop()  # back to exploring either way
+        if choice == "Yes":
+            manager.push(SpaceWarsScene(on_finish=self._on_space_wars_finish))
+
+    def _on_space_wars_finish(self, manager, scene):
+        manager.pop()  # back to exploring
+        if scene.state == "won":
+            self.show_notice(f"Stage {scene.stage} clear! The skies are safe... for now.")
+        else:
+            self.show_notice("Game Over. The Spaceport awaits your return.")
+
     # -- update/draw ----------------------------------------------------------
 
     def update(self, dt, keys, manager):
@@ -294,6 +332,8 @@ class ExploreScene(Scene):
             obstacles = obstacles + [self.world.tile.lake]
         if self.world.tile.track is not None:
             obstacles = obstacles + [self.world.tile.track]
+        if self.world.tile.launchpad is not None:
+            obstacles = obstacles + [self.world.tile.launchpad]
         self.player.update(dt, keys, obstacles)
         self.world.handle_transition(self.player)
 
@@ -312,6 +352,8 @@ class ExploreScene(Scene):
             draw_lake(surface, self.world.tile.lake.rect)
         if self.world.tile.track is not None:
             draw_track_decoration(surface, self.world.tile.track.rect, pygame.time.get_ticks() / 1000.0)
+        if self.world.tile.launchpad is not None:
+            draw_launchpad(surface, self.world.tile.launchpad.rect)
         for tree in self.world.tile.trees:
             tree.draw(surface)
         for building in self.world.tile.buildings:

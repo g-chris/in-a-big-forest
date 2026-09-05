@@ -15,7 +15,7 @@ SIGN_TEXT_COLOR = (255, 255, 255)
 
 
 class Building:
-    def __init__(self, x, y, width, height, color, sign_text, kind, sign_icon=draw_pin_icon):
+    def __init__(self, x, y, width, height, color, sign_text, kind, sign_icon=draw_pin_icon, body_draw=None):
         self.x = x
         self.y = y  # ground/base y (bottom edge of the building)
         self.width = width
@@ -24,6 +24,7 @@ class Building:
         self.sign_text = sign_text
         self.kind = kind  # e.g. "bowling" — what a scene does on interact
         self.sign_icon = sign_icon  # callable(surface, center, height)
+        self.body_draw = body_draw  # callable(surface, building), or None for the default rect+door
         self.rect = pygame.Rect(x - width / 2, y - height, width, height)
         self._font = None
 
@@ -42,14 +43,21 @@ class Building:
         if self._font is None:
             self._font = pygame.font.SysFont(None, max(12, int(self.height * 0.4 * 0.5)))
 
-        pygame.draw.rect(surface, self.color, self.rect)
+        if self.body_draw is not None:
+            # a custom shape replaces the rect body *and* the door notch —
+            # a plain rectangular door wouldn't make sense grafted onto an
+            # arbitrary shape, so door_in_range() alone (invisible, like a
+            # WorldItem's pickup radius) is the interaction affordance here
+            self.body_draw(surface, self)
+        else:
+            pygame.draw.rect(surface, self.color, self.rect)
 
-        # door: same color as the building — the outline is what reads it as
-        # a door despite matching the walls
-        door_w, door_h = self.width * 0.16, self.height * 0.55
-        door_rect = pygame.Rect(self.x - door_w / 2, self.y - door_h, door_w, door_h)
-        pygame.draw.rect(surface, self.color, door_rect)
-        pygame.draw.rect(surface, DOOR_OUTLINE_COLOR, door_rect, 2)
+            # door: same color as the building — the outline is what reads it
+            # as a door despite matching the walls
+            door_w, door_h = self.width * 0.16, self.height * 0.55
+            door_rect = pygame.Rect(self.x - door_w / 2, self.y - door_h, door_w, door_h)
+            pygame.draw.rect(surface, self.color, door_rect)
+            pygame.draw.rect(surface, DOOR_OUTLINE_COLOR, door_rect, 2)
 
         # roof sign: a small board above the roofline with the sign text and
         # an icon (draw_pin_icon by default, or whatever `sign_icon` is)
