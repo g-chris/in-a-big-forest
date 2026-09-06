@@ -30,7 +30,7 @@ EXPLOSION_SFX_PATH = os.path.join(ASSET_DIR, "explosion.wav")
 
 PLAYER_SIZE = 56
 ENEMY_SIZE = 48
-LAUNCHER_SIZE = ENEMY_SIZE * 3
+LAUNCHER_SIZE = ENEMY_SIZE * 2
 LIFE_ICON_SIZE = 22
 
 BASE_Y = 520
@@ -45,21 +45,54 @@ LASER_W, LASER_H = 3, 16
 FORMATION_Y = 110
 FORMATION_LEFT = 140
 FORMATION_RIGHT = 760
+GROUP_GAP = 40            # horizontal gap between adjacent groups in a multi-group wave — tune freely
 WAVE_DELAY = 3.0          # seconds before a "timer"-gated wave starts entering — tune freely
 
 LAUNCHER_ROW_MIN = 60             # top of the Launcher's patrol band, in px
 LAUNCHER_ROW_MAX = SCREEN_HEIGHT / 3  # "top third of the playing area"
+LAUNCHER_SPAWN_COUNT = 2          # Swarm ships created per "spawn" action — tune freely
 
-# Each stage is a list of per-wave Swarm ship counts, how the next wave in
-# the stage is released ("timer" = after WAVE_DELAY regardless of the
-# previous wave's state; "clear" = only once every ship in the previous
-# wave has reached DONE), how many Launchers appear (default 0), and the
-# stage to auto-advance into on win (None = end the run and hand off to
-# on_finish).
+# Each stage is a list of waves; each wave is a list of groups, and each
+# group names how many Swarm ships and Launchers ("launchers", default 0)
+# spawn together in their own horizontal band. "gate" says how the next
+# wave in the stage is released ("timer" = after WAVE_DELAY regardless of
+# the previous wave's state; "clear" = only once every ship AND Launcher
+# in the previous wave has reached DONE). "next" names the stage to
+# auto-advance into on win (None = end the run and hand off to on_finish).
 STAGES = {
-    "1-1": {"waves": [4, 4], "gate": "timer", "next": "1-2", "launchers": 0},
-    "1-2": {"waves": [4, 4, 8], "gate": "clear", "next": None, "launchers": 0},
-    "1-3": {"waves": [], "gate": "clear", "next": None, "launchers": 3},
+    "1-1": {
+        "waves": [{"groups": [{"swarm": 4}]}, {"groups": [{"swarm": 4}]}],
+        "gate": "timer", "next": "1-2",
+    },
+    "1-2": {
+        "waves": [{"groups": [{"swarm": 4}]}, {"groups": [{"swarm": 4}]},
+                  {"groups": [{"swarm": 8}]}],
+        "gate": "clear", "next": "1-3",
+    },
+    "1-3": {
+        "waves": [
+            {"groups": [{"swarm": 3, "launchers": 1}, {"swarm": 3, "launchers": 1}]},
+            {"groups": [{"swarm": 5, "launchers": 2}, {"swarm": 5, "launchers": 2}]},
+        ],
+        "gate": "clear", "next": "2-1",
+        "cutscene": {
+            "wait": 3.0,
+            "transmission_text": "Transmission Incoming . . .",
+            "speaker": "Bowling Alley Guy",
+            "lines": [
+                "Yeehaw, cowboy! Looks like you could use a little help.",
+                "If there's no Earth, there's no bowling! ha ha ha",
+            ],
+        },
+    },
+    "2-1": {
+        # placeholder layout — just enough to test the cutscene + wingman;
+        # the real stage 2-1 enemy design is a separate follow-up.
+        "waves": [{"groups": [{"swarm": 4}]}, {"groups": [{"swarm": 4}]}],
+        "gate": "timer", "next": None,
+        "friendly": True,
+        "game_over_line": {"speaker": "Bowling Alley Guy", "line": "Cowboy! Nooooooo !!"},
+    },
 }
 
 SCORE_PER_KILL = 25       # points for a Swarm ship destroyed by a player laser
@@ -86,6 +119,13 @@ LAUNCHER_HIT_RADIUS_PLAYER = HIT_RADIUS_PLAYER * _LAUNCHER_SCALE
 LAUNCHER_HIT_RADIUS_ENEMY = HIT_RADIUS_ENEMY * _LAUNCHER_SCALE
 LAUNCHER_SHIELD_RADIUS = LAUNCHER_SIZE / 2 + 20  # a faint halo just outside the ship's own hitbox — tune freely
 
+FRIENDLY_SIZE = PLAYER_SIZE       # the wingman flies at the same scale as the player
+FRIENDLY_OFFSET_X = -70           # px to the player's left — tune freely
+FRIENDLY_SHIELD_RADIUS = FRIENDLY_SIZE / 2 + 6  # tight, permanent halo — tune freely
+
+DIALOGUE_BOX_MARGIN = 20  # inset from the screen edges — tune freely
+DIALOGUE_BOX_HEIGHT = 140
+
 STAR_COUNT = 60
 
 BG_COLOR = (5, 5, 18)
@@ -95,6 +135,7 @@ ENEMY_LASER_COLOR = (230, 60, 60)
 TEXT_COLOR = (255, 255, 255)
 PARTICLE_COLOR = (255, 255, 255)
 SHIELD_COLOR = (120, 190, 255, 90)  # faint translucent blue ring
+NPC_PORTRAIT_COLOR = (220, 220, 220)  # matches dialogue.py's NPC_COLOR — a stick figure has no face
 
 _image_cache = {}
 
@@ -109,6 +150,22 @@ def _load_image(name, size):
 
 def _dist(x1, y1, x2, y2):
     return math.hypot(x1 - x2, y1 - y2)
+
+
+def _wrap_text(text, font, max_width):
+    words = text.split()
+    lines, current = [], ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if font.size(candidate)[0] <= max_width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
 
 
 def _wrap_x(x):
@@ -141,7 +198,7 @@ def _load_sfx(path, synth_fn):
 
 
 class SpaceWarsScene(Scene):
-    def __init__(self, on_finish=None, rng_seed=None, stage="1-1"):
+    def __init__(self, on_finish=None, rng_seed=None, stage="1-1", starting_score=0):
         self.on_finish = on_finish
         self.rng = random.Random(rng_seed)
 
@@ -153,20 +210,26 @@ class SpaceWarsScene(Scene):
         self.shot_cooldown = 0.0
         self.invulnerable_timer = 0.0
         self.lives_remaining = STARTING_EXTRA_LIVES
-        self.score = 0
+        self.score = starting_score
 
         self.player_lasers = []
         self.enemy_lasers = []
         self.particles = []
 
-        self.enemies, self.wave_bounds = self._build_formation()
+        self.enemies, self.launchers, self.wave_bounds = self._build_waves()
         self.stage_enemy_count = len(self.enemies)  # ships added later (Launcher spawns) skip wave-gating
         self.released_waves = 1  # the first wave is always active from the start
         self.wave_timer = WAVE_DELAY  # only consulted when this stage's gate is "timer"
 
-        self.launchers = self._build_launchers()
+        self.has_friendly = self.stage_config.get("friendly", False)
+        self.friendly_x = self.player_x + FRIENDLY_OFFSET_X
+        self.friendly_y = self.player_y
 
-        self.state = "playing"  # "playing" | "won" | "game_over"
+        self.cutscene_timer = 0.0  # only consulted in "post_win_wait"
+        self.dialogue_index = 0    # only consulted in "dialogue"
+
+        # "playing" | "won" | "game_over" | "post_win_wait" | "transmission_prompt" | "dialogue"
+        self.state = "playing"
 
         self.stars = [(self.rng.uniform(0, SCREEN_WIDTH), self.rng.uniform(0, SCREEN_HEIGHT))
                       for _ in range(STAR_COUNT)]
@@ -179,31 +242,46 @@ class SpaceWarsScene(Scene):
         self.explosion_sfx = _load_sfx(EXPLOSION_SFX_PATH, synthesize_explosion)
         self._play_music(SPACE_SOUNDTRACK_PATH, build_space_theme)
 
-    def _build_formation(self):
-        """Builds every enemy for the whole stage, one row per wave, each
-        row spread evenly across FORMATION_LEFT..FORMATION_RIGHT. Returns
-        (enemies, wave_bounds) where wave_bounds[i] is the (start, end)
-        index range into `enemies` for wave i."""
+    def _build_waves(self):
+        """Builds every Swarm ship and Launcher for the whole stage. Each
+        wave is a list of groups; a group's ships spawn together in their
+        own horizontal band (FORMATION_LEFT..FORMATION_RIGHT split evenly
+        among that wave's groups, with GROUP_GAP between adjacent bands —
+        a single-group wave just gets the entire span, unchanged from
+        before). Returns (enemies, launchers, wave_bounds) where
+        wave_bounds[i] is ((enemy_start, enemy_end), (launcher_start,
+        launcher_end)), the index ranges into `enemies`/`launchers` for
+        wave i."""
         enemies = []
-        wave_bounds = []
-        for wave_size in self.stage_config["waves"]:
-            start = len(enemies)
-            spacing = (FORMATION_RIGHT - FORMATION_LEFT) / (wave_size - 1) if wave_size > 1 else 0
-            for i in range(wave_size):
-                x = FORMATION_LEFT + i * spacing
-                stagger = self.rng.uniform(0, 1.5)
-                enemies.append(SwarmEnemy(x, FORMATION_Y, stagger))
-            wave_bounds.append((start, len(enemies)))
-        return enemies, wave_bounds
-
-    def _build_launchers(self):
         launchers = []
-        for _ in range(self.stage_config["launchers"]):
-            entry_x = self.rng.uniform(0, SCREEN_WIDTH)
-            target_y = self.rng.uniform(LAUNCHER_ROW_MIN, LAUNCHER_ROW_MAX)
-            launcher_rng = random.Random(self.rng.randint(0, 2**31 - 1))
-            launchers.append(Launcher(entry_x, target_y, launcher_rng))
-        return launchers
+        wave_bounds = []
+        for wave in self.stage_config["waves"]:
+            enemy_start = len(enemies)
+            launcher_start = len(launchers)
+            groups = wave["groups"]
+            band_width = (FORMATION_RIGHT - FORMATION_LEFT) / len(groups)
+            for gi, group in enumerate(groups):
+                band_left = FORMATION_LEFT + gi * band_width
+                band_right = band_left + band_width
+                if len(groups) > 1:
+                    band_left += GROUP_GAP / 2
+                    band_right -= GROUP_GAP / 2
+
+                swarm_count = group.get("swarm", 0)
+                spacing = (band_right - band_left) / (swarm_count - 1) if swarm_count > 1 else 0
+                for i in range(swarm_count):
+                    x = band_left + i * spacing
+                    stagger = self.rng.uniform(0, 1.5)
+                    enemies.append(SwarmEnemy(x, FORMATION_Y, stagger))
+
+                for _ in range(group.get("launchers", 0)):
+                    entry_x = self.rng.uniform(band_left, band_right)
+                    target_y = self.rng.uniform(LAUNCHER_ROW_MIN, LAUNCHER_ROW_MAX)
+                    launcher_rng = random.Random(self.rng.randint(0, 2**31 - 1))
+                    launchers.append(Launcher(entry_x, target_y, launcher_rng))
+
+            wave_bounds.append(((enemy_start, len(enemies)), (launcher_start, len(launchers))))
+        return enemies, launchers, wave_bounds
 
     def _spawn_swarm_ship(self, x, y):
         self.enemies.append(SwarmEnemy(x, y, self.rng.uniform(0, 1.5), instant=True))
@@ -220,16 +298,35 @@ class SpaceWarsScene(Scene):
     # -- input --------------------------------------------------------------
 
     def handle_event(self, event, manager):
-        if event.type != pygame.KEYDOWN:
-            return
-        if event.key != pygame.K_SPACE or self.state not in ("won", "game_over"):
+        if event.type != pygame.KEYDOWN or event.key != pygame.K_SPACE:
             return
 
+        if self.state == "won":
+            cutscene = self.stage_config.get("cutscene")
+            if cutscene is not None:
+                # a scripted beat plays before actually advancing — see update()/draw()
+                self.state = "post_win_wait"
+                self.cutscene_timer = cutscene["wait"]
+                return
+            self._advance_or_finish(manager)
+
+        elif self.state == "transmission_prompt":
+            self.state = "dialogue"
+            self.dialogue_index = 0
+
+        elif self.state == "dialogue":
+            self.dialogue_index += 1
+            if self.dialogue_index >= len(self.stage_config["cutscene"]["lines"]):
+                self._advance_or_finish(manager)
+
+        elif self.state == "game_over":
+            self._advance_or_finish(manager)
+
+    def _advance_or_finish(self, manager):
         next_stage = self.stage_config["next"]
-        if self.state == "won" and next_stage is not None:
-            manager.replace(SpaceWarsScene(on_finish=self.on_finish, stage=next_stage))
+        if next_stage is not None:
+            manager.replace(SpaceWarsScene(on_finish=self.on_finish, stage=next_stage, starting_score=self.score))
             return
-
         if self.on_finish is not None:
             self._play_music(FOREST_SOUNDTRACK_PATH, build_forest_theme)
             self.on_finish(manager, self)
@@ -237,7 +334,13 @@ class SpaceWarsScene(Scene):
     def update(self, dt, keys, manager):
         self._update_particles(dt)
 
-        if self.state in ("won", "game_over"):
+        if self.state == "post_win_wait":
+            self.cutscene_timer -= dt
+            if self.cutscene_timer <= 0:
+                self.state = "transmission_prompt"
+            return
+
+        if self.state in ("won", "game_over", "transmission_prompt", "dialogue"):
             return
 
         if self.invulnerable_timer > 0:
@@ -266,11 +369,17 @@ class SpaceWarsScene(Scene):
         self.player_x = _wrap_x(self.player_x)
         self.player_y = max(BASE_Y - VERTICAL_MOVEMENT, min(BASE_Y, self.player_y))
 
+        if self.has_friendly:
+            self.friendly_x = _wrap_x(self.player_x + FRIENDLY_OFFSET_X)
+            self.friendly_y = self.player_y
+
     def _update_player_shooting(self, dt, keys):
         if self.shot_cooldown > 0:
             self.shot_cooldown -= dt
         if keys[pygame.K_SPACE] and self.shot_cooldown <= 0:
             self.player_lasers.append({"x": self.player_x, "y": self.player_y - PLAYER_SIZE / 2})
+            if self.has_friendly:
+                self.player_lasers.append({"x": self.friendly_x, "y": self.friendly_y - FRIENDLY_SIZE / 2})
             self.shot_cooldown = COOLDOWN_TIME
             self.score = max(0, self.score - SCORE_PER_SHOT)
             if self.player_laser_sfx is not None:
@@ -287,7 +396,7 @@ class SpaceWarsScene(Scene):
         self.enemy_lasers = [l for l in self.enemy_lasers if l["y"] < SCREEN_HEIGHT + 20]
 
     def _update_enemies(self, dt):
-        active_end = 0
+        enemies_active_end = 0
         if self.wave_bounds:
             if self.released_waves < len(self.wave_bounds):
                 if self.stage_config["gate"] == "timer":
@@ -295,16 +404,18 @@ class SpaceWarsScene(Scene):
                     if self.wave_timer <= 0:
                         self.released_waves += 1
                         self.wave_timer = WAVE_DELAY
-                else:  # "clear" — next wave waits until the previous one is fully gone
-                    start, end = self.wave_bounds[self.released_waves - 1]
-                    if all(e.state == DONE for e in self.enemies[start:end]):
+                else:  # "clear" — next wave waits until the previous one (ships AND Launchers) is fully gone
+                    (e_start, e_end), (l_start, l_end) = self.wave_bounds[self.released_waves - 1]
+                    enemies_done = all(e.state == DONE for e in self.enemies[e_start:e_end])
+                    launchers_done = all(l.state == DONE for l in self.launchers[l_start:l_end])
+                    if enemies_done and launchers_done:
                         self.released_waves += 1
-            active_end = self.wave_bounds[self.released_waves - 1][1]
+            enemies_active_end = self.wave_bounds[self.released_waves - 1][0][1]
 
         for i, enemy in enumerate(self.enemies):
             if enemy.state == DONE:
                 continue
-            if i < self.stage_enemy_count and i >= active_end:
+            if i < self.stage_enemy_count and i >= enemies_active_end:
                 continue  # part of this stage's original waves, not yet released
             shots = enemy.update(dt, self.player_x, self.player_y)
             for (sx, sy) in shots:
@@ -316,10 +427,17 @@ class SpaceWarsScene(Scene):
                 enemy.state = DONE
                 self._spawn_particles(enemy.x, SCREEN_HEIGHT - 10, PARTICLE_COUNT_ENEMY)
 
+    def _launchers_active_end(self):
+        return self.wave_bounds[self.released_waves - 1][1][1] if self.wave_bounds else 0
+
     def _update_launchers(self, dt):
-        for launcher in self.launchers:
+        launchers_active_end = self._launchers_active_end()
+
+        for i, launcher in enumerate(self.launchers):
             if launcher.state == DONE:
                 continue
+            if i >= launchers_active_end:
+                continue  # part of a later wave that hasn't been released yet
             shots, spawn_requested = launcher.update(dt)
             for (sx, sy, dx, dy) in shots:
                 self.enemy_lasers.append({
@@ -329,7 +447,8 @@ class SpaceWarsScene(Scene):
                 if self.enemy_laser_sfx is not None:
                     self.enemy_laser_sfx.play()
             if spawn_requested:
-                self._spawn_swarm_ship(launcher.x, launcher.y)
+                for _ in range(LAUNCHER_SPAWN_COUNT):
+                    self._spawn_swarm_ship(launcher.x, launcher.y)
             launcher.x = _wrap_x(launcher.x)
 
     def _check_collisions(self):
@@ -430,6 +549,8 @@ class SpaceWarsScene(Scene):
         self._draw_enemies(surface)
         self._draw_lasers(surface)
         self._draw_player(surface)
+        if self.has_friendly:
+            self._draw_friendly(surface)
         self._draw_particles(surface)
         self._draw_hud(surface)
 
@@ -439,6 +560,15 @@ class SpaceWarsScene(Scene):
             self._draw_end_box(surface, f"Stage {self.stage} Clear!", hint)
         elif self.state == "game_over":
             self._draw_end_box(surface, "GAME OVER")
+            game_over_line = self.stage_config.get("game_over_line")
+            if game_over_line is not None:
+                self._draw_dialogue_box(surface, game_over_line["speaker"], game_over_line["line"])
+        elif self.state == "transmission_prompt":
+            cutscene = self.stage_config["cutscene"]
+            self._draw_end_box(surface, cutscene["transmission_text"], "Spacebar to Accept")
+        elif self.state == "dialogue":
+            cutscene = self.stage_config["cutscene"]
+            self._draw_dialogue_box(surface, cutscene["speaker"], cutscene["lines"][self.dialogue_index])
 
     def _draw_enemies(self, surface):
         image = _load_image("ENEMY01", ENEMY_SIZE)
@@ -448,15 +578,18 @@ class SpaceWarsScene(Scene):
             surface.blit(image, image.get_rect(center=(enemy.x, enemy.y)))
 
         launcher_image = _load_image("ENEMY02", LAUNCHER_SIZE)
-        for launcher in self.launchers:
+        launchers_active_end = self._launchers_active_end()
+        for i, launcher in enumerate(self.launchers):
             if launcher.state == DONE:
                 continue
+            if i >= launchers_active_end:
+                continue  # not yet released — stays fully hidden, not just off-screen
             if launcher.shield_active:
-                self._draw_shield(surface, launcher.x, launcher.y)
+                self._draw_shield(surface, launcher.x, launcher.y, LAUNCHER_SHIELD_RADIUS)
             surface.blit(launcher_image, launcher_image.get_rect(center=(launcher.x, launcher.y)))
 
-    def _draw_shield(self, surface, x, y):
-        radius = int(LAUNCHER_SHIELD_RADIUS)
+    def _draw_shield(self, surface, x, y, radius):
+        radius = int(radius)
         size = radius * 2 + 4
         shield_surface = pygame.Surface((size, size), pygame.SRCALPHA)
         pygame.draw.circle(shield_surface, SHIELD_COLOR, (size // 2, size // 2), radius, width=3)
@@ -479,6 +612,11 @@ class SpaceWarsScene(Scene):
                 return
         image = _load_image("PLAYERSHIP", PLAYER_SIZE)
         surface.blit(image, image.get_rect(center=(self.player_x, self.player_y)))
+
+    def _draw_friendly(self, surface):
+        self._draw_shield(surface, self.friendly_x, self.friendly_y, FRIENDLY_SHIELD_RADIUS)
+        image = _load_image("FRIENDLY01", FRIENDLY_SIZE)
+        surface.blit(image, image.get_rect(center=(self.friendly_x, self.friendly_y)))
 
     def _draw_particles(self, surface):
         for p in self.particles:
@@ -510,3 +648,40 @@ class SpaceWarsScene(Scene):
 
         hint = self._small_font.render(hint_text, True, TEXT_COLOR)
         surface.blit(hint, hint.get_rect(midbottom=(box.centerx, box.bottom - 12)))
+
+    def _draw_dialogue_box(self, surface, speaker, line):
+        """The bottom-anchored, full-width "incoming transmission" box: a
+        square portrait on the left, speaker + word-wrapped line to its
+        right — distinct from _draw_end_box, which is the small centered
+        stage-clear/game-over/transmission-prompt box."""
+        box = pygame.Rect(DIALOGUE_BOX_MARGIN, SCREEN_HEIGHT - DIALOGUE_BOX_HEIGHT - DIALOGUE_BOX_MARGIN,
+                           SCREEN_WIDTH - 2 * DIALOGUE_BOX_MARGIN, DIALOGUE_BOX_HEIGHT)
+        pygame.draw.rect(surface, (20, 20, 20), box)
+        pygame.draw.rect(surface, TEXT_COLOR, box, 2)
+
+        portrait_rect = pygame.Rect(box.left, box.top, box.height, box.height)
+        pygame.draw.rect(surface, TEXT_COLOR, portrait_rect, 2)
+        self._draw_portrait(surface, portrait_rect)
+
+        text_left = portrait_rect.right + 16
+        text_width = box.right - text_left - 16
+
+        speaker_label = self._small_font.render(speaker, True, TEXT_COLOR)
+        y = box.top + 12
+        surface.blit(speaker_label, (text_left, y))
+        y += speaker_label.get_height() + 6
+
+        for wrapped_line in _wrap_text(line, self._small_font, text_width):
+            label = self._small_font.render(wrapped_line, True, TEXT_COLOR)
+            surface.blit(label, (text_left, y))
+            y += label.get_height() + 2
+
+        hint = self._small_font.render("SPACE to continue", True, TEXT_COLOR)
+        surface.blit(hint, hint.get_rect(bottomright=(box.right - 12, box.bottom - 10)))
+
+    def _draw_portrait(self, surface, rect):
+        """Just a head — the game's whole art style is a stick figure with
+        no face (see stick_figure.py/dialogue.py), so a portrait is only
+        ever a plain circle."""
+        radius = rect.height * 0.32
+        pygame.draw.circle(surface, NPC_PORTRAIT_COLOR, rect.center, int(radius))

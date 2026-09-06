@@ -24,7 +24,7 @@ def build_main_menu(footstep_sound, bump_sound, engine_sound):
         if label == "New Game":
             manager.replace(ExploreScene(footstep_sound, bump_sound, engine_sound))
         elif label == "Minigames":
-            manager.push(build_minigames_menu(footstep_sound, bump_sound, engine_sound))
+            manager.push(build_minigames_menu())
         elif label == "Options":
             manager.push(build_options_menu())
         else:
@@ -49,13 +49,9 @@ def build_options_menu():
     return ListMenu(title="Options", options=options, on_select=on_select)
 
 
-def build_minigames_menu(footstep_sound, bump_sound, engine_sound):
-    def _launch_full_game(manager):
-        manager.replace(ExploreScene(footstep_sound, bump_sound, engine_sound))
-
-    entries = [("Full Game (from the start)", _launch_full_game)] + MINIGAME_LAUNCHERS
-    options = [name for name, _launcher in entries] + ["Back"]
-    launchers = dict(entries)
+def build_minigames_menu():
+    options = [name for name, _launcher in MINIGAME_LAUNCHERS] + ["Back"]
+    launchers = dict(MINIGAME_LAUNCHERS)
 
     def on_select(manager, index, label):
         if label == "Back":
@@ -129,6 +125,10 @@ def _launch_space_wars_stage_3(manager):
     manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="1-3"))
 
 
+def _launch_space_wars_stage_2_1(manager):
+    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="2-1"))
+
+
 def _on_space_wars_test_finish(manager, scene):
     manager.pop()  # back to the minigames menu
     manager.current.show_notice(f"Stage {scene.stage} clear!" if scene.state == "won" else "Game Over")
@@ -141,4 +141,5 @@ MINIGAME_LAUNCHERS = [
     ("Space Wars", _launch_space_wars),
     ("Space Wars (Stage 1-2)", _launch_space_wars_stage_2),
     ("Space Wars (Stage 1-3)", _launch_space_wars_stage_3),
+    ("Space Wars (Stage 2-1)", _launch_space_wars_stage_2_1),
 ]
