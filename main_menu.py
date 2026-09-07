@@ -14,6 +14,7 @@ from explore_scene import ExploreScene
 from fishing.scene import FishingScene
 from menu import ListMenu
 from motocross.scene import MotocrossScene
+import save_system
 from space_wars.scene import SpaceWarsScene
 
 COMING_SOON = "Coming soon!"
@@ -23,6 +24,8 @@ def build_main_menu(footstep_sound, bump_sound, engine_sound):
     def on_select(manager, index, label):
         if label == "New Game":
             manager.replace(ExploreScene(footstep_sound, bump_sound, engine_sound))
+        elif label == "Load Game":
+            manager.push(build_load_game_menu(footstep_sound, bump_sound, engine_sound))
         elif label == "Minigames":
             manager.push(build_minigames_menu())
         elif label == "Options":
@@ -47,6 +50,27 @@ def build_options_menu():
         manager.push(PixelArtScene())
 
     return ListMenu(title="Options", options=options, on_select=on_select)
+
+
+def build_load_game_menu(footstep_sound, bump_sound, engine_sound):
+    options = [save_system.SLOT_LABELS[slot_id] for slot_id in save_system.SLOT_IDS] + ["DEBUG", "Back"]
+
+    def on_select(manager, index, label):
+        if label == "Back":
+            manager.pop()
+            return
+        if label == "DEBUG":
+            manager.replace(ExploreScene.from_save_data(
+                save_system.debug_fixture(), footstep_sound, bump_sound, engine_sound))
+            return
+        slot_id = save_system.LABEL_TO_SLOT_ID[label]
+        if not save_system.slot_exists(slot_id):
+            manager.current.show_notice("That slot is empty.")
+            return
+        manager.replace(ExploreScene.from_save_data(
+            save_system.read_slot(slot_id), footstep_sound, bump_sound, engine_sound))
+
+    return ListMenu(title="Load Game", subtitle="Pick a save slot", options=options, on_select=on_select)
 
 
 def build_minigames_menu():

@@ -17,6 +17,7 @@ from lake_shape import draw_lake
 from map import World
 from motocross.scene import MotocrossScene
 from player import Player
+import save_system
 from scene import Scene
 from space_wars.scene import SpaceWarsScene
 from spaceport_icon import draw_launchpad
@@ -34,17 +35,9 @@ EQUIP_TOGGLE_MESSAGES = {
     "head": ("You put on the helmet.", "You take off the helmet."),
 }
 
-
-def use_item(item):
-    """Return the flavor text for using `item` right now, or None if the slot is empty."""
-    if item is None:
-        return None
-    record = get_item(item.name)
-    if record is None:
-        return None
-    # nothing in the world can satisfy a "use" yet (e.g. no PS1 to insert a
-    # disc into), so this always resolves to the can't-use line for now
-    return record.cant_use_description
+# nothing in the world can satisfy a "use" yet (e.g. no PS1 to insert a
+# disc into), so trying to use any non-equip item always gets this line
+FOREST_RANGER_CANT_USE_LINE = "Not here, not now. Thank you for not littering."
 
 
 class ExploreScene(Scene):
@@ -66,6 +59,8 @@ class ExploreScene(Scene):
         self.fishing_high_score = None  # best total kg across visits
         self.won_hammer = False      # Hammer, also one-time
         self.motocross_best_time = None  # best race time across visits (lower is better)
+        self.player_name = None      # earned by winning Space Wars — never cleared once set
+        self.bowling_alley_closed = False  # the Bowling Alley Guy gave everything away and left for good
 
         self.hint_font = pygame.font.SysFont(None, 22)
         self.message_font = pygame.font.SysFont(None, 24)
@@ -85,11 +80,11 @@ class ExploreScene(Scene):
             self.inventory.toggle()
             self.use_message = ""
         elif self.inventory.is_open:
-            self._handle_inventory_key(event)
+            self._handle_inventory_key(event, manager)
         elif event.key == pygame.K_SPACE:
             self._handle_interact(manager)
 
-    def _handle_inventory_key(self, event):
+    def _handle_inventory_key(self, event, manager):
         if event.key == pygame.K_LEFT:
             self.inventory.move_selector(-1, 0)
         elif event.key == pygame.K_RIGHT:
@@ -99,14 +94,18 @@ class ExploreScene(Scene):
         elif event.key == pygame.K_DOWN:
             self.inventory.move_selector(0, 1)
         elif event.key == pygame.K_SPACE:
-            self._use_selected_item()
+            self._use_selected_item(manager)
+        elif event.key == pygame.K_s:
+            self._open_save_menu(manager)
 
-    def _use_selected_item(self):
+    def _use_selected_item(self, manager):
         item = self.inventory.selected_item()
         if item is None:
             return
         record = get_item(item.name)
-        if record is not None and record.equip_slot is not None:
+        if record is None:
+            return
+        if record.equip_slot is not None:
             equip_on_message, equip_off_message = EQUIP_TOGGLE_MESSAGES[record.equip_slot]
             if record.equip_slot == "vehicle":
                 self.player.toggle_riding()
@@ -116,9 +115,72 @@ class ExploreScene(Scene):
                 self.use_message = equip_on_message if self.player.wearing_helmet else equip_off_message
             return
 
-        message = use_item(item)
-        if message is not None:
-            self.use_message = message
+        manager.push(DialogueScene(
+            speaker="Forest Ranger",
+            line=FOREST_RANGER_CANT_USE_LINE,
+            choices=["OK"],
+            on_choice=lambda m, choice: m.pop(),
+            wearing_helmet=self.player.wearing_helmet,
+        ))
+
+    def _open_save_menu(self, manager):
+        manager.push(DialogueScene(
+            speaker="Save Master",
+            line="Choose a slot to save to.",
+            choices=[save_system.SLOT_LABELS[slot_id] for slot_id in save_system.SLOT_IDS] + ["Cancel"],
+            on_choice=self._on_save_slot_choice,
+            wearing_helmet=self.player.wearing_helmet,
+        ))
+
+    def _on_save_slot_choice(self, manager, choice):
+        manager.pop()  # back to the still-open inventory
+        if choice == "Cancel":
+            return
+        slot_id = save_system.LABEL_TO_SLOT_ID[choice]
+        save_system.write_slot(slot_id, self.to_save_data())
+        self.use_message = f"Saved to {choice}."
+
+    def to_save_data(self):
+        return {
+            "tx": self.world.tx, "ty": self.world.ty,
+            "player_x": self.player.x, "player_y": self.player.y,
+            "riding": self.player.riding, "wearing_helmet": self.player.wearing_helmet,
+            "collected_items": [list(t) for t in sorted(self.world.collected_items)],
+            "inventory": [item.name if item else None for item in self.inventory.slots],
+            "won_machine_part": self.won_machine_part,
+            "bowling_high_score": self.bowling_high_score,
+            "won_motorcycle": self.won_motorcycle,
+            "won_helmet": self.won_helmet,
+            "fishing_high_score": self.fishing_high_score,
+            "won_hammer": self.won_hammer,
+            "motocross_best_time": self.motocross_best_time,
+            "player_name": self.player_name,
+            "bowling_alley_closed": self.bowling_alley_closed,
+        }
+
+    @classmethod
+    def from_save_data(cls, data, footstep_sound=None, bump_sound=None, engine_sound=None):
+        scene = cls(footstep_sound, bump_sound, engine_sound)
+        collected_items = {tuple(entry) for entry in data["collected_items"]}
+        scene.world = World(tx=data["tx"], ty=data["ty"], collected_items=collected_items)
+        scene.player.x = data["player_x"]
+        scene.player.y = data["player_y"]
+        scene.player.riding = data["riding"]
+        scene.player.wearing_helmet = data["wearing_helmet"]
+        scene.inventory.slots = [
+            Item(get_item(name).name, get_item(name).color) if name is not None else None
+            for name in data["inventory"]
+        ]
+        scene.won_machine_part = data["won_machine_part"]
+        scene.bowling_high_score = data["bowling_high_score"]
+        scene.won_motorcycle = data["won_motorcycle"]
+        scene.won_helmet = data["won_helmet"]
+        scene.fishing_high_score = data["fishing_high_score"]
+        scene.won_hammer = data["won_hammer"]
+        scene.motocross_best_time = data["motocross_best_time"]
+        scene.player_name = data["player_name"]
+        scene.bowling_alley_closed = data["bowling_alley_closed"]
+        return scene
 
     def _handle_interact(self, manager):
         for world_item in self.world.tile.items:
@@ -143,6 +205,16 @@ class ExploreScene(Scene):
     # -- bowling shack flow ---------------------------------------------------
 
     def _open_shack_dialogue(self, manager):
+        if self.bowling_alley_closed:
+            manager.push(DialogueScene(
+                speaker="Shopkeep",
+                line="The door's locked . . .",
+                choices=["OK"],
+                on_choice=lambda m, choice: m.pop(),
+                wearing_helmet=self.player.wearing_helmet,
+            ))
+            return
+
         if self.won_machine_part:
             line = f"Come back to beat your high score of {self.bowling_high_score}?"
         else:
@@ -287,17 +359,17 @@ class ExploreScene(Scene):
         # gated on Machine Part #25, per spec
         if not self.won_machine_part:
             manager.push(DialogueScene(
-                speaker="Spaceport",
-                line="The Spaceport sits dark and silent. It needs Machine Part #25 to power on.",
-                choices=["OK"],
+                speaker="Space Command",
+                line="Make a name for yourself, join the Space War. We're one part away from the next launch.",
+                choices=["Leave"],
                 on_choice=lambda m, choice: m.pop(),
                 wearing_helmet=self.player.wearing_helmet,
             ))
             return
 
         manager.push(DialogueScene(
-            speaker="Spaceport",
-            line="The Spaceport hums with power! Ready to defend the skies?",
+            speaker="Space Command",
+            line="That's the last part. Ready to fly, recruit?",
             choices=["Yes", "No"],
             on_choice=self._on_spaceport_choice,
             wearing_helmet=self.player.wearing_helmet,
@@ -310,6 +382,11 @@ class ExploreScene(Scene):
 
     def _on_space_wars_finish(self, manager, scene):
         manager.pop()  # back to exploring
+        if scene.stage == "3-2":
+            self.bowling_alley_closed = True  # the Bowling Alley Guy already gave everything away and left
+        if scene.player_name is not None:
+            self.player_name = scene.player_name
+
         if scene.state == "won":
             self.show_notice(f"Stage {scene.stage} clear! The skies are safe... for now.")
         else:
@@ -363,12 +440,19 @@ class ExploreScene(Scene):
         self.player.draw(surface, self.world.tile.trees)
 
         self._draw_interact_hint(surface)
-        self.inventory.draw(surface)
+        self.inventory.draw(surface, title=self.player_name)
+        self._draw_inventory_hint(surface)
         self._draw_use_message(surface)
         self._draw_notice(surface)
 
         coord_label = self.debug_font.render(f"Tile ({self.world.tx}, {self.world.ty})", True, (200, 200, 200))
         surface.blit(coord_label, (8, 8))
+
+    def _draw_inventory_hint(self, surface):
+        if not self.inventory.is_open:
+            return
+        hint = self.hint_font.render("I: Close   S: Save", True, (200, 200, 200))
+        surface.blit(hint, hint.get_rect(midtop=(SCREEN_WIDTH // 2, 16)))
 
     def _draw_interact_hint(self, surface):
         nearby_item = next((wi for wi in self.world.tile.items if wi.in_range(self.player.x, self.player.y)), None)

@@ -7,3 +7,6 @@ __pycache__/
 
 # generated at runtime by game.py if missing — not worth tracking
 assets/
+
+# player save files — runtime data, not source
+saves/

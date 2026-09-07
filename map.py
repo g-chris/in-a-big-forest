@@ -10,10 +10,10 @@ from tile import generate_tile
 
 
 class World:
-    def __init__(self, tx=START_TX, ty=START_TY):
+    def __init__(self, tx=START_TX, ty=START_TY, collected_items=None):
         self.tx = tx
         self.ty = ty
-        self.collected_items = set()  # {(tx, ty, item_name)}, survives tile regen
+        self.collected_items = collected_items if collected_items is not None else set()  # {(tx, ty, item_name)}, survives tile regen
         self.tile = generate_tile(self.tx, self.ty, self.collected_items)
 
     def handle_transition(self, player):

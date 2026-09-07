@@ -61,6 +61,8 @@ class Inventory:
         self.is_open = False
         self.selected = 0
         self._font = None
+        self._title_font = None
+        self._name_font = None
 
     def toggle(self):
         self.is_open = not self.is_open
@@ -83,11 +85,15 @@ class Inventory:
     def selected_item(self):
         return self.slots[self.selected]
 
-    def draw(self, surface):
+    def draw(self, surface, title=None):
         if not self.is_open:
             return
         if self._font is None:
             self._font = pygame.font.SysFont(None, 18)
+        if self._title_font is None:
+            self._title_font = pygame.font.SysFont(None, 32)
+        if self._name_font is None:
+            self._name_font = pygame.font.SysFont(None, 24)
 
         grid_w = self.cols * SLOT_SIZE + (self.cols + 1) * SLOT_PADDING
         grid_h = self.rows * SLOT_SIZE + (self.rows + 1) * SLOT_PADDING
@@ -97,6 +103,10 @@ class Inventory:
         panel_rect = pygame.Rect(panel_x, panel_y, grid_w, grid_h)
         pygame.draw.rect(surface, PANEL_BG, panel_rect)
         pygame.draw.rect(surface, PANEL_BORDER, panel_rect, 2)
+
+        if title:
+            label = self._title_font.render(title, True, TEXT_COLOR)
+            surface.blit(label, label.get_rect(midbottom=(panel_rect.centerx, panel_rect.top - 12)))
 
         for index, item in enumerate(self.slots):
             col = index % self.cols
@@ -117,3 +127,8 @@ class Inventory:
 
             if index == self.selected:
                 pygame.draw.rect(surface, SELECTOR_COLOR, slot_rect, 3)
+
+        selected_item = self.slots[self.selected]
+        if selected_item is not None:
+            name_label = self._name_font.render(selected_item.name, True, (255, 255, 255))
+            surface.blit(name_label, name_label.get_rect(midtop=(panel_rect.centerx, panel_rect.bottom + 10)))
