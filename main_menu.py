@@ -129,6 +129,22 @@ def _launch_space_wars_stage_2_1(manager):
     manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="2-1"))
 
 
+def _launch_space_wars_stage_2_2(manager):
+    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="2-2"))
+
+
+def _launch_space_wars_stage_2_3(manager):
+    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="2-3"))
+
+
+def _launch_space_wars_stage_3_1(manager):
+    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="3-1"))
+
+
+def _launch_space_wars_stage_3_2(manager):
+    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="3-2", starting_charge_unlocked=True))
+
+
 def _on_space_wars_test_finish(manager, scene):
     manager.pop()  # back to the minigames menu
     manager.current.show_notice(f"Stage {scene.stage} clear!" if scene.state == "won" else "Game Over")
@@ -142,4 +158,8 @@ MINIGAME_LAUNCHERS = [
     ("Space Wars (Stage 1-2)", _launch_space_wars_stage_2),
     ("Space Wars (Stage 1-3)", _launch_space_wars_stage_3),
     ("Space Wars (Stage 2-1)", _launch_space_wars_stage_2_1),
+    ("Space Wars (Stage 2-2)", _launch_space_wars_stage_2_2),
+    ("Space Wars (Stage 2-3)", _launch_space_wars_stage_2_3),
+    ("Space Wars (Stage 3-1)", _launch_space_wars_stage_3_1),
+    ("Space Wars (Stage 3-2)", _launch_space_wars_stage_3_2),
 ]

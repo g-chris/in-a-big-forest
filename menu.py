@@ -17,8 +17,9 @@ SELECTED_COLOR = (255, 220, 0)  # matches dialogue.py's SELECTED_COLOR / the pla
 TITLE_COLOR = (255, 255, 255)
 NOTICE_DURATION = 3.0
 
-OPTION_SPACING = 44
+OPTION_SPACING = 44       # max/default spacing between options — long menus compress to fit
 OPTIONS_TOP = 260
+OPTIONS_BOTTOM_MARGIN = 40  # keep the last option clear of the screen edge
 
 
 class ListMenu(Scene):
@@ -84,10 +85,14 @@ class ListMenu(Scene):
             subtitle_label = self._subtitle_font.render(self.subtitle, True, TEXT_COLOR)
             surface.blit(subtitle_label, subtitle_label.get_rect(center=(SCREEN_WIDTH // 2, 160)))
 
+        available_height = SCREEN_HEIGHT - OPTIONS_BOTTOM_MARGIN - OPTIONS_TOP
+        spacing = OPTION_SPACING
+        if len(self.options) > 1:
+            spacing = min(OPTION_SPACING, available_height / (len(self.options) - 1))
         for i, option in enumerate(self.options):
             color = SELECTED_COLOR if i == self.selected else TEXT_COLOR
             label = self._option_font.render(option, True, color)
-            y = OPTIONS_TOP + i * OPTION_SPACING
+            y = OPTIONS_TOP + i * spacing
             surface.blit(label, label.get_rect(center=(SCREEN_WIDTH // 2, y)))
 
         self._draw_notice(surface)

@@ -11,6 +11,18 @@ Launcher: enter from off-screen down to a patrol row, then drift
 horizontally, taking a random action (change direction, fire a 3-shot
 spread, or request a Swarm ship be spawned) every LAUNCHER_ACTION_INTERVAL
 seconds.
+
+Seeker: enter from the side, then wander randomly, pulled toward the
+player's position for a few seconds every time the scene tells it
+(notify_shot) the player has fired. Fires a single shot straight down
+every few seconds; the scene calls explode() once it reaches the bottom
+of the play area for a radial burst.
+
+Boss: enter from off-screen down to a patrol row, then float slowly back
+and forth across the screen (the scene supplies the bounds it bounces
+between), firing a burst (a laser fan + straight-down bombs) at a
+randomly re-rolled interval. Never reaches DONE — there is no code path
+that destroys it.
 """
 
 import math
@@ -151,3 +163,172 @@ class Launcher:
             angle = math.radians(angle_deg)
             shots.append((self.x, self.y, math.sin(angle), math.cos(angle)))
         return shots
+
+
+ACTIVE = "active"
+
+SEEKER_ENTER_SPEED = 200        # px/s while entering from the side
+SEEKER_ENTER_DISTANCE = 80       # px moved inward before switching to ACTIVE
+SEEKER_SPEED = 130               # px/s, both wandering and seeking — tune freely
+SEEKER_WANDER_CHANGE_INTERVAL = 1.5   # seconds between random new wander directions
+SEEKER_SEEK_DURATION = 2.0        # seconds spent heading toward the last player shot
+SEEKER_SHOT_INTERVAL = 3.0        # seconds between its own downward laser shots
+SEEKER_EXPLOSION_SHOT_COUNT = 8   # radial burst size when it reaches the bottom
+
+
+class Seeker:
+    def __init__(self, entry_x, entry_y, direction, rng):
+        self.x, self.y = entry_x, entry_y
+        self.entry_x = entry_x
+        self.direction = direction  # +1 entering from the left, -1 from the right
+        self.state = ENTERING
+        self.rng = rng  # a random.Random the scene seeds from its own rng
+        self.wander_dx = 0.0
+        self.wander_dy = 0.0
+        self.wander_timer = 0.0  # <=0 forces an immediate direction roll on the first ACTIVE frame
+        self.seek_timer = 0.0
+        self.seek_target_x = 0.0
+        self.seek_target_y = 0.0
+        self.shot_timer = SEEKER_SHOT_INTERVAL
+
+    def update(self, dt):
+        """Advances one frame; returns a list of (x, y, dx, dy) shot
+        tuples for its own periodic downward laser (usually empty). The
+        scene separately checks the screen-relative "reached the bottom"
+        condition and calls explode() when that happens — this class has
+        no notion of screen bounds."""
+        if self.state == ENTERING:
+            self.x += self.direction * SEEKER_ENTER_SPEED * dt
+            if abs(self.x - self.entry_x) >= SEEKER_ENTER_DISTANCE:
+                self.state = ACTIVE
+            return []
+
+        if self.state == ACTIVE:
+            if self.seek_timer > 0:
+                self.seek_timer -= dt
+                dx, dy = self.seek_target_x - self.x, self.seek_target_y - self.y
+                dist = math.hypot(dx, dy) or 1.0
+                self.x += dx / dist * SEEKER_SPEED * dt
+                self.y += dy / dist * SEEKER_SPEED * dt
+            else:
+                self.wander_timer -= dt
+                if self.wander_timer <= 0:
+                    angle = self.rng.uniform(0, 2 * math.pi)
+                    self.wander_dx, self.wander_dy = math.cos(angle), math.sin(angle)
+                    self.wander_timer = SEEKER_WANDER_CHANGE_INTERVAL
+                self.x += self.wander_dx * SEEKER_SPEED * dt
+                self.y += self.wander_dy * SEEKER_SPEED * dt
+
+            shots = []
+            self.shot_timer -= dt
+            if self.shot_timer <= 0:
+                self.shot_timer = SEEKER_SHOT_INTERVAL
+                shots.append((self.x, self.y, 0.0, 1.0))  # straight down
+            return shots
+
+        return []  # DONE
+
+    def notify_shot(self, x, y):
+        """Called by the scene once per player shot fired — retargets and
+        refreshes the seek window, even mid-seek (rapid fire keeps it
+        homing continuously on the player's live position)."""
+        self.seek_target_x, self.seek_target_y = x, y
+        self.seek_timer = SEEKER_SEEK_DURATION
+
+    def explode(self):
+        """Call when the scene detects this Seeker reached the bottom of
+        the play area: destroys it and returns the 8-shot radial burst."""
+        self.state = DONE
+        return [(self.x, self.y, math.cos(a), math.sin(a))
+                for a in (2 * math.pi * i / SEEKER_EXPLOSION_SHOT_COUNT
+                          for i in range(SEEKER_EXPLOSION_SHOT_COUNT))]
+
+
+BOSS_ENTER_SPEED = 80          # px/s while descending to its patrol row
+BOSS_MOVE_SPEED = 40            # very slow "floating" patrol speed — tune freely
+BOSS_SHOT_MIN_INTERVAL = 2.0
+BOSS_SHOT_MAX_INTERVAL = 6.0     # re-rolled after every burst
+BOSS_LASER_COUNT = 4
+BOSS_LASER_SPREAD_ANGLE = 35     # degrees each side of straight down, for the laser fan
+BOSS_BOMB_COUNT = 3
+BOSS_BOMB_OFFSET = 60            # px between each dropped bomb's x position
+BOSS_SHIELD_FLASH_DURATION = 3.0  # seconds the shield flashes before disappearing, after the 2nd charge hit
+
+
+class Boss:
+    def __init__(self, entry_x, target_y, rng, max_hp=None):
+        self.x, self.y = entry_x, -60.0
+        self.target_y = target_y  # the patrol row, chosen by the scene
+        self.state = ENTERING
+        self.rng = rng  # a random.Random the scene seeds from its own rng
+        self.direction = rng.choice([-1, 1])
+        self.shot_timer = rng.uniform(BOSS_SHOT_MIN_INTERVAL, BOSS_SHOT_MAX_INTERVAL)
+
+        self.shield_hits = 0
+        self.shield_flash_timer = 0.0
+        self.shield_removed = False
+        self.max_hp = max_hp  # None = impenetrable (e.g. stage 1's decorative Boss)
+        self.hp = max_hp
+        self.defeated = False
+
+    def update(self, dt, min_x, max_x):
+        """Advances one frame; returns a list of (x, y, dx, dy, kind)
+        shots (usually empty), `kind` being "laser" or "bomb" so the scene
+        can draw/tag them differently. `min_x`/`max_x` are the
+        screen-relative bounds it bounces between, supplied by the scene
+        each call — this class has no notion of screen size."""
+        if self.shield_flash_timer > 0:
+            self.shield_flash_timer -= dt
+            if self.shield_flash_timer <= 0:
+                self.shield_removed = True
+
+        if self.state == ENTERING:
+            self.y += BOSS_ENTER_SPEED * dt
+            if self.y >= self.target_y:
+                self.y = self.target_y
+                self.state = ACTIVE
+            return []
+
+        # ACTIVE: float back and forth, firing a full burst at a freshly
+        # re-rolled random interval
+        self.x += self.direction * BOSS_MOVE_SPEED * dt
+        if self.x <= min_x:
+            self.x, self.direction = min_x, 1
+        elif self.x >= max_x:
+            self.x, self.direction = max_x, -1
+
+        self.shot_timer -= dt
+        if self.shot_timer <= 0:
+            self.shot_timer = self.rng.uniform(BOSS_SHOT_MIN_INTERVAL, BOSS_SHOT_MAX_INTERVAL)
+            return self._fire_burst()
+        return []
+
+    def _fire_burst(self):
+        shots = []
+        for i in range(BOSS_LASER_COUNT):
+            t = i / (BOSS_LASER_COUNT - 1)
+            angle = math.radians(-BOSS_LASER_SPREAD_ANGLE + t * 2 * BOSS_LASER_SPREAD_ANGLE)
+            shots.append((self.x, self.y, math.sin(angle), math.cos(angle), "laser"))
+        for i in range(BOSS_BOMB_COUNT):
+            offset = (i - (BOSS_BOMB_COUNT - 1) / 2) * BOSS_BOMB_OFFSET
+            shots.append((self.x + offset, self.y, 0.0, 1.0, "bomb"))
+        return shots
+
+    def hit_shield(self):
+        """Call when a charge shot connects with the still-present shield.
+        A no-op once it's already flashing or fully removed, so a single
+        piercing shot lingering nearby can't rack up extra hits."""
+        if self.shield_removed or self.shield_flash_timer > 0:
+            return
+        self.shield_hits += 1
+        if self.shield_hits >= 2:
+            self.shield_flash_timer = BOSS_SHIELD_FLASH_DURATION
+
+    def damage(self, amount):
+        """A no-op until the shield is fully gone (or if this Boss has no
+        HP system at all, i.e. max_hp is None — the impenetrable case)."""
+        if self.max_hp is None or not self.shield_removed or self.defeated:
+            return
+        self.hp = max(0, self.hp - amount)
+        if self.hp <= 0:
+            self.defeated = True
