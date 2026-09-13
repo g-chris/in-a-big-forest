@@ -2,10 +2,10 @@
 direct access to every mini-game built so far, for quick playtesting
 without walking to each hut and satisfying its unlock condition.
 
-New mini-games should be added to MINIGAME_LAUNCHERS below — that's the one
-place this file needs to change to show up on the test menu. In the shipped
-game, hut/minigame access will instead be gated behind save data (see the
-planned Load Game slots); until then this menu is the fast path for testing.
+New mini-games should be added to MINIGAME_LAUNCHERS below; a new Space
+Wars stage should be added to SPACE_WARS_STAGES. See CONVENTIONS.txt for
+the full checklist. This menu is a testing fast path alongside the real
+save-gated progression (see build_load_game_menu/save_system.py).
 """
 
 from art_tools import PixelArtScene
@@ -135,38 +135,31 @@ def _on_motocross_test_finish(manager, race):
     manager.current.show_notice(f"Time: {race.race_time:.1f}s")
 
 
-# -- space wars: single-player only, launches straight in --
+# -- space wars: a stage-select submenu, so every stage gets direct access
+# for playtesting without walking through the previous ones first --
+
+SPACE_WARS_STAGES = ["1-1", "1-2", "1-3", "2-1", "2-2", "2-3", "3-1", "3-2"]
+
 
 def _launch_space_wars(manager):
-    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish))
+    manager.push(build_space_wars_stage_menu())
 
 
-def _launch_space_wars_stage_2(manager):
-    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="1-2"))
+def build_space_wars_stage_menu():
+    options = [f"Stage {stage}" for stage in SPACE_WARS_STAGES] + ["Back"]
 
+    def on_select(manager, index, label):
+        if label == "Back":
+            manager.pop()
+            return
+        stage = SPACE_WARS_STAGES[index]
+        manager.pop()  # drop the stage-select menu
+        # jumping straight to the final stage needs the charge shot already
+        # unlocked — normally earned during 3-1's cutscene, which this skips
+        kwargs = {"starting_charge_unlocked": True} if stage == "3-2" else {}
+        manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage=stage, **kwargs))
 
-def _launch_space_wars_stage_3(manager):
-    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="1-3"))
-
-
-def _launch_space_wars_stage_2_1(manager):
-    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="2-1"))
-
-
-def _launch_space_wars_stage_2_2(manager):
-    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="2-2"))
-
-
-def _launch_space_wars_stage_2_3(manager):
-    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="2-3"))
-
-
-def _launch_space_wars_stage_3_1(manager):
-    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="3-1"))
-
-
-def _launch_space_wars_stage_3_2(manager):
-    manager.push(SpaceWarsScene(on_finish=_on_space_wars_test_finish, stage="3-2", starting_charge_unlocked=True))
+    return ListMenu(title="Space Wars", subtitle="Pick a stage", options=options, on_select=on_select)
 
 
 def _on_space_wars_test_finish(manager, scene):
@@ -179,11 +172,4 @@ MINIGAME_LAUNCHERS = [
     ("Fishing", _launch_fishing),
     ("MotoCross", _launch_motocross),
     ("Space Wars", _launch_space_wars),
-    ("Space Wars (Stage 1-2)", _launch_space_wars_stage_2),
-    ("Space Wars (Stage 1-3)", _launch_space_wars_stage_3),
-    ("Space Wars (Stage 2-1)", _launch_space_wars_stage_2_1),
-    ("Space Wars (Stage 2-2)", _launch_space_wars_stage_2_2),
-    ("Space Wars (Stage 2-3)", _launch_space_wars_stage_2_3),
-    ("Space Wars (Stage 3-1)", _launch_space_wars_stage_3_1),
-    ("Space Wars (Stage 3-2)", _launch_space_wars_stage_3_2),
 ]

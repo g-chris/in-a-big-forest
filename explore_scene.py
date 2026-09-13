@@ -7,6 +7,7 @@ cleanly.
 
 import pygame
 
+from bank_scene import BankScene
 from bowling.scene import BowlingScene
 from constants import BLACK, SCREEN_HEIGHT, SCREEN_WIDTH
 from dialogue import DialogueScene
@@ -39,6 +40,8 @@ EQUIP_TOGGLE_MESSAGES = {
 # disc into), so trying to use any non-equip item always gets this line
 FOREST_RANGER_CANT_USE_LINE = "Not here, not now. Thank you for not littering."
 
+BANK_CASH_ITEM_NAME = "$10,000 US Cash"
+
 
 class ExploreScene(Scene):
     def __init__(self, footstep_sound=None, bump_sound=None, engine_sound=None):
@@ -61,6 +64,8 @@ class ExploreScene(Scene):
         self.motocross_best_time = None  # best race time across visits (lower is better)
         self.player_name = None      # earned by winning Space Wars — never cleared once set
         self.bowling_alley_closed = False  # the Bowling Alley Guy gave everything away and left for good
+        self.won_bank_account = False  # the promo account has been opened, also one-time
+        self.bank_storage = Inventory()  # same shape as self.inventory — items parked at the Bank
 
         self.hint_font = pygame.font.SysFont(None, 22)
         self.message_font = pygame.font.SysFont(None, 24)
@@ -156,6 +161,8 @@ class ExploreScene(Scene):
             "motocross_best_time": self.motocross_best_time,
             "player_name": self.player_name,
             "bowling_alley_closed": self.bowling_alley_closed,
+            "won_bank_account": self.won_bank_account,
+            "bank_storage": [item.name if item else None for item in self.bank_storage.slots],
         }
 
     @classmethod
@@ -180,6 +187,11 @@ class ExploreScene(Scene):
         scene.motocross_best_time = data["motocross_best_time"]
         scene.player_name = data["player_name"]
         scene.bowling_alley_closed = data["bowling_alley_closed"]
+        scene.won_bank_account = data["won_bank_account"]
+        scene.bank_storage.slots = [
+            Item(get_item(name).name, get_item(name).color) if name is not None else None
+            for name in data["bank_storage"]
+        ]
         return scene
 
     def _handle_interact(self, manager):
@@ -200,6 +212,8 @@ class ExploreScene(Scene):
                     self._open_motocross_dialogue(manager)
                 elif building.kind == "spaceport":
                     self._open_spaceport_dialogue(manager)
+                elif building.kind == "bank":
+                    self._open_bank_dialogue(manager)
                 return
 
     # -- bowling shack flow ---------------------------------------------------
@@ -391,6 +405,86 @@ class ExploreScene(Scene):
             self.show_notice(f"Stage {scene.stage} clear! The skies are safe... for now.")
         else:
             self.show_notice("Game Over. The Spaceport awaits your return.")
+
+    # -- bank flow ----------------------------------------------------------
+
+    def _push_dialogue_chain(self, manager, speaker, lines, on_finish):
+        """Push `lines` one at a time as press-space-to-continue DialogueScenes
+        (an invisible single choice, so space just advances), then call
+        on_finish(manager) once the last line is dismissed."""
+        def _show(m, index):
+            if index >= len(lines):
+                on_finish(m)
+                return
+
+            def _advance(mgr, choice):
+                mgr.pop()
+                _show(mgr, index + 1)
+
+            m.push(DialogueScene(
+                speaker=speaker, line=lines[index], choices=[""],
+                on_choice=_advance, wearing_helmet=self.player.wearing_helmet,
+            ))
+
+        _show(manager, 0)
+
+    def _open_bank_dialogue(self, manager):
+        if self.won_bank_account:
+            manager.push(DialogueScene(
+                speaker="Bank Teller",
+                line="Access your account?",
+                choices=["Yes", "No"],
+                on_choice=self._on_bank_teller_choice,
+                wearing_helmet=self.player.wearing_helmet,
+            ))
+            return
+
+        self._push_dialogue_chain(manager, "Bank President", [
+            "Ah, a new client! Great news!",
+            "We're having a special promotion for opening a new account!",
+        ], on_finish=self._open_bank_promo_offer)
+
+    def _open_bank_promo_offer(self, manager):
+        manager.push(DialogueScene(
+            speaker="Bank President",
+            line="$10,000 US, cash, to our first new account! Do you want to open an Account?",
+            choices=["Yes", "No"],
+            on_choice=self._on_bank_promo_choice,
+            wearing_helmet=self.player.wearing_helmet,
+        ))
+
+    def _on_bank_promo_choice(self, manager, choice):
+        manager.pop()  # back to exploring either way
+        if choice != "Yes":
+            return
+
+        if self.player_name is None:
+            self._push_dialogue_chain(manager, "Bank President", [
+                "Perfect! We just need your name!",
+                " . . . ",
+                "So . . . what's your name?",
+                " . . .",
+                "Ok so we can't open an account without a name.",
+                "Why don't you come back when you, uh. . .",
+                " . . . have a name . . .",
+            ], on_finish=lambda m: None)
+        else:
+            self._push_dialogue_chain(manager, "Bank President", [
+                "Excellent! Just sign right here . . . ",
+                f"Ok {self.player_name}. your account is all set!",
+                "We hope to serve all your banking needs. And here's the 10 piece to hold as promised.",
+            ], on_finish=self._on_bank_account_opened)
+
+    def _on_bank_account_opened(self, manager):
+        record = get_item(BANK_CASH_ITEM_NAME)
+        self.inventory.add_item(Item(record.name, record.color))
+        self.won_bank_account = True
+        self.show_notice(f"Account opened - you receive {BANK_CASH_ITEM_NAME}!")
+
+    def _on_bank_teller_choice(self, manager, choice):
+        manager.pop()  # back to exploring either way
+        if choice == "Yes":
+            manager.push(BankScene(self.inventory, self.bank_storage))
 
     # -- update/draw ----------------------------------------------------------
 

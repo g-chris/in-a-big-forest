@@ -13,6 +13,8 @@ equip items (the toggle messages are generated where the toggle happens).
 
 from dataclasses import dataclass
 
+from constants import GREEN
+
 
 @dataclass(frozen=True)
 class ItemRecord:
@@ -61,6 +63,13 @@ ITEM_TABLE = [
         color=(120, 120, 125),
         cant_use_description="Nothing around here needs hammering. Yet.",
         use_description="You give it a few test swings.",
+    ),
+    ItemRecord(
+        name="$10,000 US Cash",
+        tag="Currency",
+        color=GREEN,
+        cant_use_description="You already keep this safe at the Bank.",
+        use_description="You count it. Yep, still $10,000.",
     ),
 ]
 

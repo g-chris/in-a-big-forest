@@ -18,23 +18,24 @@ class World:
 
     def handle_transition(self, player):
         """Call once per frame after `player.update()`. If the player just
-        exited an edge that has a neighboring tile, move there, reposition
-        the player at the matching entry point, and load the new tile's
-        content. Does nothing if the edge is at the map's outer boundary —
-        Player's own clamp already keeps them on-screen in that case.
+        exited an edge, move to the neighboring tile, reposition the player
+        at the matching entry point, and load the new tile's content. The
+        map wraps at its outer boundary (column/row index wraps around via
+        modulo) rather than blocking, so the forest loops endlessly instead
+        of having a hard edge.
         """
         edge = player.exit_edge
-        if edge == "left" and self.tx > 0:
-            self.tx -= 1
+        if edge == "left":
+            self.tx = (self.tx - 1) % WORLD_COLS
             player.x = SCREEN_WIDTH - player.height / 2 - 1
-        elif edge == "right" and self.tx < WORLD_COLS - 1:
-            self.tx += 1
+        elif edge == "right":
+            self.tx = (self.tx + 1) % WORLD_COLS
             player.x = player.height / 2 + 1
-        elif edge == "top" and self.ty > 0:
-            self.ty -= 1
+        elif edge == "top":
+            self.ty = (self.ty - 1) % WORLD_ROWS
             player.y = SCREEN_HEIGHT - 11
-        elif edge == "bottom" and self.ty < WORLD_ROWS - 1:
-            self.ty += 1
+        elif edge == "bottom":
+            self.ty = (self.ty + 1) % WORLD_ROWS
             player.y = player.height + 1
         else:
             return

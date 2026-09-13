@@ -63,4 +63,6 @@ def debug_fixture():
         "motocross_best_time": 20.0,
         "player_name": None,
         "bowling_alley_closed": False,
+        "won_bank_account": False,  # needs a name first, and Space Wars is deliberately left untouched above
+        "bank_storage": [None] * 16,
     }

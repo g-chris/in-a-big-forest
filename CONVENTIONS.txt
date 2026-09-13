@@ -1,0 +1,48 @@
+IN A BIG FOREST — PROJECT CONVENTIONS
+======================================
+
+Working conventions established during development. Update this file
+whenever a new one is settled, so future work (and future sessions) stays
+consistent instead of re-deriving the same decisions.
+
+-- GAME DESIGN PHILOSOPHY -------------------------------------------------
+
+- In A Big Forest mixes classic point-and-click item-trading sequences
+  (walk to a hut, earn/trade an item, use it to unlock the next hut) with
+  single-button minigames, each built to keep the player guessing what's
+  coming next.
+- Total playtime target: under an hour, start to finish.
+- The fun is figuring out (a) the overall item-trading sequence and
+  (b) each minigame's controls/strategy on its own — minigames ship with
+  limited to no explicit instructions.
+- Technical goals: keep the game as lightweight and memory-efficient as
+  possible, and keep the code DRY.
+- Art style: stay simple by default, but increasingly replace placeholder
+  shapes with original pixel art made in the built-in Pixel Art Studio
+  (art_tools.py, reachable from Options).
+
+-- TILE CREATION CHECKLIST ------------------------------------------------
+
+When a tile in tile.py (TILE_FORESTS / TILE_ITEMS / TILE_BUILDINGS /
+TILE_LAKES / TILE_MOTOCROSS_TRACKS / TILE_LAUNCHPADS) is filled in or
+changed:
+
+1. Rerun `python3 render_map_overview.py` to refresh assets/world_map.png,
+   so the world-map overview stays accurate to what's actually in tile.py.
+2. If the change adds something unlockable (a new won_* flag, item, or
+   equip state on ExploreScene), update save_system.py's debug_fixture()
+   to include it — the DEBUG load slot should always represent "everything
+   unlockable so far, already unlocked," ready to test whatever's next.
+
+-- MINIGAME CREATION CHECKLIST --------------------------------------------
+
+When a new minigame is added (or a new stage/level within one):
+
+1. Add a direct-launch entry to main_menu.py's MINIGAME_LAUNCHERS, so it's
+   reachable for testing without playing through the overworld gate.
+2. For Space Wars specifically: add the new stage id to main_menu.py's
+   SPACE_WARS_STAGES list, so it shows up in the Space Wars stage-select
+   submenu (Minigames -> Space Wars -> pick a stage).
+3. Wire the real in-world unlock path too (a building/dialogue in
+   explore_scene.py) — the menu entry is a testing shortcut, not a
+   replacement for the actual progression.

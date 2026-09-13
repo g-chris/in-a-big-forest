@@ -8,6 +8,7 @@ and discards the previous one.
 
 import pygame
 
+from bank_icon import bank_sign_icon, draw_bank_body
 from building import Building
 from fish_icon import draw_fish
 from inventory import Item, WorldItem
@@ -94,6 +95,18 @@ TILE_BUILDINGS = {
             "kind": "spaceport",
             "sign_icon": spaceport_sign_icon,
             "body_draw": draw_spaceport_body,
+        },
+    ],
+    (3, 2): [
+        {
+            "x": 450, "y": 480,
+            "width": 260,
+            "height": 100,  # "large" like the spaceport — a proper facade needs the room
+            "color": (170, 170, 170),
+            "sign_text": "BANK",
+            "kind": "bank",
+            "sign_icon": bank_sign_icon,
+            "body_draw": draw_bank_body,
         },
     ],
 }

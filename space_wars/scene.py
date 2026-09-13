@@ -200,9 +200,7 @@ SCORE_PER_LAUNCHER_KILL = 150  # points for a Launcher destroyed by a player las
 SCORE_PER_SEEKER_KILL = 300  # points for a Seeker destroyed by a player laser
 SCORE_PER_SHOT = 1        # points deducted for each shot fired, floored at 0
 
-STARTING_LIFE_BONUS_THRESHOLD = 1000  # first bonus-life score
-STARTING_LIFE_BONUS_STEP = 1000       # gap to the next threshold; grows by LIFE_BONUS_STEP_INCREMENT each grant
-LIFE_BONUS_STEP_INCREMENT = 1000      # so thresholds land at 1000, 2000, 4000, 7000, 11000, ... — tune freely
+LIFE_BONUS_INTERVAL = 1000  # an extra life every 1000 points (1000, 2000, 3000, ...) — tune freely
 LIFE_BONUS_FLASH_DURATION = 1.5  # seconds the score flashes + "BONUS LIFE" shows — tune freely
 LIFE_BONUS_FLASH_COLOR = (255, 220, 0)  # matches the game's established yellow accent (dialogue.py's PLAYER_COLOR)
 
@@ -397,8 +395,7 @@ def _load_sfx(path, synth_fn):
 
 class SpaceWarsScene(Scene):
     def __init__(self, on_finish=None, rng_seed=None, stage="1-1", starting_score=0,
-                 starting_lives=STARTING_EXTRA_LIVES, starting_life_bonus_threshold=STARTING_LIFE_BONUS_THRESHOLD,
-                 starting_life_bonus_step=STARTING_LIFE_BONUS_STEP,
+                 starting_lives=STARTING_EXTRA_LIVES, starting_life_bonus_threshold=LIFE_BONUS_INTERVAL,
                  starting_charge_unlocked=False, starting_friendly_shield_visible=True):
         self.on_finish = on_finish
         self.rng = random.Random(rng_seed)
@@ -413,7 +410,6 @@ class SpaceWarsScene(Scene):
         self.lives_remaining = starting_lives
         self.score = starting_score
         self.next_life_bonus_threshold = starting_life_bonus_threshold
-        self.life_bonus_step = starting_life_bonus_step
         self.life_bonus_flash_timer = 0.0
 
         self.player_lasers = []
@@ -731,7 +727,6 @@ class SpaceWarsScene(Scene):
             manager.replace(SpaceWarsScene(
                 on_finish=self.on_finish, stage=next_stage, starting_score=self.score,
                 starting_lives=self.lives_remaining, starting_life_bonus_threshold=self.next_life_bonus_threshold,
-                starting_life_bonus_step=self.life_bonus_step,
                 starting_charge_unlocked=self.charge_unlocked,
                 starting_friendly_shield_visible=self.friendly_shield_visible))
             return
@@ -1157,17 +1152,14 @@ class SpaceWarsScene(Scene):
         self.boss_defeat_timer = BOSS_DEFEAT_DURATION
 
     def _check_life_bonus(self):
-        """Grants an extra life every time score crosses a threshold. The
-        gap to the next threshold grows by LIFE_BONUS_STEP_INCREMENT each
-        time (1000, 2000, 4000, 7000, 11000, ...), so bonus lives keep
-        coming but progressively further apart. The threshold only ever
-        moves forward, so losing points afterward (e.g. from shooting)
-        can't re-cross an already-passed threshold and cheese another
-        life out of the same milestone."""
+        """Grants an extra life every LIFE_BONUS_INTERVAL points (3000,
+        6000, 9000, ...). The threshold only ever moves forward, so losing
+        points afterward (e.g. from shooting) can't re-cross an
+        already-passed threshold and cheese another life out of the same
+        milestone."""
         while self.score >= self.next_life_bonus_threshold:
             self.lives_remaining += 1
-            self.next_life_bonus_threshold += self.life_bonus_step
-            self.life_bonus_step += LIFE_BONUS_STEP_INCREMENT
+            self.next_life_bonus_threshold += LIFE_BONUS_INTERVAL
             self.life_bonus_flash_timer = LIFE_BONUS_FLASH_DURATION
 
     # -- player death ---------------------------------------------------------
