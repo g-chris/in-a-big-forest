@@ -46,3 +46,25 @@ When a new minigame is added (or a new stage/level within one):
 3. Wire the real in-world unlock path too (a building/dialogue in
    explore_scene.py) — the menu entry is a testing shortcut, not a
    replacement for the actual progression.
+
+-- RELEASE CHECKLIST -------------------------------------------------------
+
+The game ships as prebuilt Linux/Windows/macOS binaries (see README.md's
+Download section), built by .github/workflows/release.yml. Keep in mind:
+
+1. Hand-drawn art (anything saved from the Pixel Art Studio, or any other
+   *.png loaded with pygame.image.load) must be committed — .gitignore
+   only un-ignores assets/*.png from the otherwise-ignored assets/ dir, so
+   a new png won't silently vanish, but double check `git status` shows it
+   before tagging a release. Audio/world_map.png stay ignored since those
+   regenerate at runtime/via render_map_overview.py — no fallback exists
+   for art, so a missing one crashes the game the moment it's loaded.
+2. A new third-party dependency goes in requirements.txt — the release
+   workflow installs only from that file, so the build will break (or
+   silently lack the dependency) otherwise.
+3. To cut a release: `git tag vX.Y.Z && git push origin vX.Y.Z`. The
+   README's download links always point at `releases/latest/download/...`,
+   so no README edit is needed afterward unless the asset filenames
+   themselves change.
+4. macOS builds Apple Silicon only for now (GitHub's macos-latest runners);
+   add a macos-13 matrix leg if an Intel build is ever needed.
