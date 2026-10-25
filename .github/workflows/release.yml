@@ -22,19 +22,16 @@ jobs:
             asset_name: in-a-big-forest-linux-x86_64.tar.gz
             binary_name: in-a-big-forest
             data_sep: ":"
-            archive: tar
           - os: windows-latest
             asset_name: in-a-big-forest-windows-x86_64.zip
             binary_name: in-a-big-forest.exe
             data_sep: ";"
-            archive: zip
           - os: macos-latest
             # GitHub's macos-latest runners are Apple Silicon — this won't
             # run on an older Intel Mac without also adding a macos-13 leg
             asset_name: in-a-big-forest-macos-arm64.zip
             binary_name: in-a-big-forest
             data_sep: ":"
-            archive: zip
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -57,13 +54,18 @@ jobs:
         run: |
           pyinstaller --onefile --name in-a-big-forest --add-data "assets${{ matrix.data_sep }}assets" game.py
 
-      - name: Package (tar preserves the executable bit; zip is what Windows/macOS users expect)
-        run: |
-          if [ "${{ matrix.archive }}" = "tar" ]; then
-            tar -C dist -czf "${{ matrix.asset_name }}" "${{ matrix.binary_name }}"
-          else
-            (cd dist && zip "../${{ matrix.asset_name }}" "${{ matrix.binary_name }}")
-          fi
+      - name: Package (Linux — tar preserves the executable bit on extract)
+        if: matrix.os == 'ubuntu-latest'
+        run: tar -C dist -czf "${{ matrix.asset_name }}" "${{ matrix.binary_name }}"
+
+      - name: Package (macOS — zip, what mac users expect)
+        if: matrix.os == 'macos-latest'
+        run: (cd dist && zip "../${{ matrix.asset_name }}" "${{ matrix.binary_name }}")
+
+      - name: Package (Windows — zip via Compress-Archive; windows-latest has no `zip` on PATH)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Compress-Archive -Path "dist/${{ matrix.binary_name }}" -DestinationPath "${{ matrix.asset_name }}"
 
       - name: Smoke test the binary launches
         run: |
