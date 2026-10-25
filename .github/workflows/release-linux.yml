@@ -1,0 +1,61 @@
+name: Release (Linux)
+
+# Builds a self-contained Linux executable with PyInstaller and attaches it
+# to a GitHub Release, so anyone (no Python/pygame install needed) can just
+# download and run the game. Triggered by pushing a version tag (v*), or
+# manually from the Actions tab for a one-off test build.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  ASSET_NAME: in-a-big-forest-linux-x86_64.tar.gz
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build onefile executable
+        run: |
+          pyinstaller --onefile --name in-a-big-forest --add-data "assets:assets" game.py
+
+      - name: Package (preserves the executable bit on extract)
+        run: tar -C dist -czf "${{ env.ASSET_NAME }}" in-a-big-forest
+
+      - name: Smoke test the binary launches
+        run: |
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 5 ./dist/in-a-big-forest || code=$?
+          # timeout kills a successfully-running game loop with 124; anything
+          # else means it crashed on startup instead of actually running
+          if [ "${code:-124}" -ne 124 ]; then
+            echo "game exited early with code $code"
+            exit 1
+          fi
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET_NAME }}
+
+      - name: Upload workflow artifact (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: ${{ env.ASSET_NAME }}

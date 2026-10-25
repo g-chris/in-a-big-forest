@@ -9,10 +9,19 @@ live game objects (ExploreScene.to_save_data/from_save_data).
 
 import json
 import os
+import sys
 
 from constants import SCREEN_HEIGHT, SCREEN_WIDTH, START_TX, START_TY
 
-SAVE_DIR = os.path.join(os.path.dirname(__file__), "saves")
+if getattr(sys, "frozen", False):
+    # a PyInstaller onefile build's __file__ resolves inside its temp
+    # extraction dir, which is wiped after the process exits — saves must
+    # live next to the actual executable instead, so they survive between runs
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(__file__)
+
+SAVE_DIR = os.path.join(_BASE_DIR, "saves")
 
 SLOT_IDS = ["1", "2", "3"]
 SLOT_LABELS = {"1": "SAVE SLOT 1", "2": "SAVE SLOT 2", "3": "SAVE SLOT 3"}
