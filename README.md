@@ -7,17 +7,28 @@ part of the fun.
 
 ## Download
 
-**[⬇ Download for Linux](https://github.com/g-chris/in-a-big-forest/releases/latest/download/in-a-big-forest-linux-x86_64.tar.gz)**
+No Python install needed — these are self-contained binaries. Your save
+slots are written next to the executable, so keep the extracted folder
+around between play sessions.
 
-No Python install needed — it's a self-contained binary.
+**[⬇ Linux](https://github.com/g-chris/in-a-big-forest/releases/latest/download/in-a-big-forest-linux-x86_64.tar.gz)**
 
 ```sh
 tar -xzf in-a-big-forest-linux-x86_64.tar.gz
 ./in-a-big-forest
 ```
 
-Your save slots are written next to the executable, so keep the extracted
-folder around between play sessions.
+**[⬇ Windows](https://github.com/g-chris/in-a-big-forest/releases/latest/download/in-a-big-forest-windows-x86_64.zip)**
+
+Unzip, then double-click `in-a-big-forest.exe`. Windows will likely show a
+"Windows protected your PC" SmartScreen warning the first time, since the
+exe isn't signed — click **More info** → **Run anyway**.
+
+**[⬇ macOS (Apple Silicon)](https://github.com/g-chris/in-a-big-forest/releases/latest/download/in-a-big-forest-macos-arm64.zip)**
+
+Unzip, then **right-click → Open** on `in-a-big-forest` the first time (a
+plain double-click will get blocked by Gatekeeper since the app isn't
+notarized). Intel Macs aren't built yet — ask if you need one.
 
 ## Controls
 
@@ -42,5 +53,6 @@ python3 game.py
 See [CONVENTIONS.txt](CONVENTIONS.txt) for the project's design philosophy
 and the checklists to follow when adding tiles or minigames. Pushing a tag
 like `v0.1.0` (`git tag v0.1.0 && git push origin v0.1.0`) triggers
-[.github/workflows/release-linux.yml](.github/workflows/release-linux.yml),
-which builds the Linux binary above and attaches it to a GitHub Release.
+[.github/workflows/release.yml](.github/workflows/release.yml), which
+builds the Linux/Windows/macOS binaries above and attaches them to a
+GitHub Release.
